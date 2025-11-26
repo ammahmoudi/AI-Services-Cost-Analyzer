@@ -4,17 +4,22 @@ Extractor Registry
 Central registry for all available extractors.
 """
 from extractors.fal_extractor import FalAIExtractor
+from extractors.together_extractor import TogetherAIExtractor
 
 # Registry of available extractors (with aliases)
 EXTRACTORS = {
     'fal': FalAIExtractor,
     'falai': FalAIExtractor,  # Alias
     'fal.ai': FalAIExtractor,  # Alias
+    'together': TogetherAIExtractor,
+    'togetherai': TogetherAIExtractor,  # Alias
+    'together.ai': TogetherAIExtractor,  # Alias
 }
 
 # Primary extractor names (for display)
 PRIMARY_EXTRACTORS = {
     'fal': 'Fal.ai (aliases: falai, fal.ai)',
+    'together': 'Together AI (aliases: togetherai, together.ai)',
 }
 
 
