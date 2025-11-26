@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>AI Models</h2>
+    
+    <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <form method="GET" style="display: flex; gap: 1rem; flex: 1;">
+            <input type="text" name="search" placeholder="Search models..." value="{{ search }}" style="flex: 1;">
+            <select name="source_id" style="flex: 0 0 200px;">
+                <option value="">All Sources</option>
+                {% for source in sources %}
+                    <option value="{{ source.id }}" {% if current_source == source.id %}selected{% endif %}>
+                        {{ source.name }}
+                    </option>
+                {% endfor %}
+            </select>
+            <select name="type" style="flex: 0 0 200px;">
+                <option value="">All Types</option>
+                {% for type in model_types %}
+                    <option value="{{ type }}" {% if current_type == type %}selected{% endif %}>
+                        {{ type }}
+                    </option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn">Filter</button>
+        </form>
+    </div>
+    
+    {% if models %}
+        <p style="color: #6b7280; margin-bottom: 1rem;">Showing {{ models|length }} models</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Cost per Call</th>
+                    <th>Credits</th>
+                    <th>Source</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for model in models %}
+                <tr>
+                    <td>
+                        <strong>{{ model.name }}</strong>
+                        {% if model.description %}
+                            <br><small style="color: #6b7280;">{{ model.description[:80] }}...</small>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge badge-blue">{{ model.model_type }}</span></td>
+                    <td><strong>${{ "%.4f"|format(model.cost_per_call) }}</strong></td>
+                    <td>{{ model.credits_required if model.credits_required else '-' }}</td>
+                    <td>{{ model.source.name }}</td>
+                    <td>
+                        <a href="/models/{{ model.id }}" class="btn btn-small">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="empty-state">
+            <h3>No models found</h3>
+            <p>Try adjusting your filters or extract data from a source.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

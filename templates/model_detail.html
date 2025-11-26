@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <a href="/models" style="color: #2563eb; text-decoration: none; margin-bottom: 1rem; display: inline-block;">← Back to Models</a>
+    
+    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+        <h2 style="margin: 0;">{{ model.name }}</h2>
+        <button id="extractPricingBtn" class="btn" onclick="extractModelPricing({{ model.id }})" style="background: #10b981;">
+            🤖 Extract Pricing with AI
+        </button>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 2rem 0;">
+        <div>
+            <h3 style="color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem;">Model ID</h3>
+            <p style="font-family: monospace; background: #f3f4f6; padding: 0.5rem; border-radius: 4px;">{{ model.model_id }}</p>
+        </div>
+        <div>
+            <h3 style="color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem;">Type</h3>
+            <p><span class="badge badge-blue">{{ model.model_type }}</span></p>
+        </div>
+        <div>
+            <h3 style="color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem;">Cost per Call</h3>
+            <p style="font-size: 1.5rem; font-weight: 700; color: #2563eb;">${{ "%.4f"|format(model.cost_per_call) }}</p>
+        </div>
+        <div>
+            <h3 style="color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem;">Credits Required</h3>
+            <p>{{ model.credits_required if model.credits_required else 'N/A' }}</p>
+        </div>
+    </div>
+    
+    {% if model.description %}
+    <div style="margin: 2rem 0;">
+        <h3 style="margin-bottom: 0.5rem;">Description</h3>
+        <p style="color: #4b5563;">{{ model.description }}</p>
+    </div>
+    {% endif %}
+    
+    {% if model.pricing_info %}
+    <div style="margin: 2rem 0;">
+        <h3 style="margin-bottom: 0.5rem;">Pricing Info</h3>
+        <p style="color: #4b5563;">{{ model.pricing_info }}</p>
+    </div>
+    {% endif %}
+    
+    {% if model.pricing_type %}
+    <div style="margin: 2rem 0; background: #f0fdf4; padding: 1.5rem; border-radius: 8px; border: 1px solid #86efac;">
+        <h3 style="margin-bottom: 1rem; color: #166534;">🤖 LLM-Extracted Pricing Details</h3>
+        
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+            <div>
+                <strong style="color: #166534;">Pricing Type:</strong>
+                <p><span class="badge badge-green">{{ model.pricing_type }}</span></p>
+            </div>
+            <div>
+                <strong style="color: #166534;">Cost Unit:</strong>
+                <p>{{ model.cost_unit if model.cost_unit else 'N/A' }}</p>
+            </div>
+        </div>
+        
+        {% if model.pricing_formula %}
+        <div style="margin-top: 1rem;">
+            <strong style="color: #166534;">Pricing Formula:</strong>
+            <p style="color: #15803d;">{{ model.pricing_formula }}</p>
+        </div>
+        {% endif %}
+        
+        {% if model.input_cost_per_unit or model.output_cost_per_unit %}
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1rem;">
+            {% if model.input_cost_per_unit %}
+            <div>
+                <strong style="color: #166534;">Input Cost per Unit:</strong>
+                <p>${{ "%.6f"|format(model.input_cost_per_unit) }}</p>
+            </div>
+            {% endif %}
+            {% if model.output_cost_per_unit %}
+            <div>
+                <strong style="color: #166534;">Output Cost per Unit:</strong>
+                <p>${{ "%.6f"|format(model.output_cost_per_unit) }}</p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        {% if model.pricing_variables %}
+        <div style="margin-top: 1rem;">
+            <strong style="color: #166534;">Pricing Variables:</strong>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                {% for key, value in model.pricing_variables.items() %}
+                    <span class="badge badge-gray">{{ key }}: {{ value }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if model.llm_extracted and model.llm_extracted.get('notes') %}
+        <div style="margin-top: 1rem;">
+            <strong style="color: #166534;">Notes:</strong>
+            <p style="color: #15803d; font-size: 0.9rem;">{{ model.llm_extracted.notes }}</p>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    {% if model.tags %}
+    <div style="margin: 2rem 0;">
+        <h3 style="margin-bottom: 0.5rem;">Tags</h3>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            {% for tag in model.tags %}
+                <span class="badge badge-gray">{{ tag }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if model.thumbnail_url %}
+    <div style="margin: 2rem 0;">
+        <h3 style="margin-bottom: 0.5rem;">Preview</h3>
+        <img src="{{ model.thumbnail_url }}" alt="{{ model.name }}" style="max-width: 300px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+    </div>
+    {% endif %}
+    
+    <div style="margin: 2rem 0;">
+        <h3 style="margin-bottom: 0.5rem;">Metadata</h3>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+            <div>
+                <strong>Source:</strong> {{ model.source.name }}
+            </div>
+            <div>
+                <strong>Category:</strong> {{ model.category if model.category else 'N/A' }}
+            </div>
+            <div>
+                <strong>Created:</strong> {{ model.created_at.strftime('%Y-%m-%d %H:%M') }}
+            </div>
+            <div>
+                <strong>Updated:</strong> {{ model.updated_at.strftime('%Y-%m-%d %H:%M') }}
+            </div>
+        </div>
+    </div>
+    
+    {% if model.raw_metadata %}
+    <details style="margin: 2rem 0;">
+        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 1rem;">Raw Metadata (JSON)</summary>
+        <pre style="background: #1f2937; color: #f3f4f6; padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem;">{{ model.raw_metadata | tojson(indent=2) }}</pre>
+    </details>
+    {% endif %}
+</div>
+
+<script>
+function extractModelPricing(modelId) {
+    const btn = document.getElementById('extractPricingBtn');
+    const originalText = btn.innerHTML;
+    
+    if (!confirm('Extract pricing information using AI? This will use your configured LLM to analyze the model\'s pricing data.')) {
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Extracting...';
+    
+    fetch(`/models/${modelId}/extract-pricing`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ Pricing extracted successfully! The page will reload to show the updated information.');
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+</script>
+{% endblock %}

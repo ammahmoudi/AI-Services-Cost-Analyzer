@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Cache Management{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>📦 Cache Management</h1>
+    
+    <div class="card" style="margin-bottom: 2rem;">
+        <h2>Cache Statistics</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-top: 1rem;">
+            <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
+                <div style="font-size: 2rem; color: #3b82f6; font-weight: bold;">{{ cache_stats.total_cached_models }}</div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">Total Cached Models</div>
+            </div>
+            
+            <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
+                <div style="font-size: 2rem; color: #10b981; font-weight: bold;">{{ cache_stats.schemas_count }}</div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">Cached Schemas</div>
+            </div>
+            
+            <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
+                <div style="font-size: 2rem; color: #8b5cf6; font-weight: bold;">{{ cache_stats.llm_extractions_count }}</div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">LLM Extractions</div>
+            </div>
+            
+            <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
+                <div style="font-size: 2rem; color: #f59e0b; font-weight: bold;">{{ cache_stats.total_size_mb }}</div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">Total Size (MB)</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card" style="margin-bottom: 2rem;">
+        <h2>Cache by Source</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Models</th>
+                    <th>Schemas</th>
+                    <th>LLM Extractions</th>
+                    <th>Size (MB)</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for source_name, stats in cache_stats.by_source.items() %}
+                <tr>
+                    <td><strong>{{ source_name }}</strong></td>
+                    <td>{{ stats.models }}</td>
+                    <td>{{ stats.schemas }}</td>
+                    <td>{{ stats.llm_extractions }}</td>
+                    <td>{{ stats.size_mb }}</td>
+                    <td>
+                        <button 
+                            onclick="clearSourceCache('{{ source_name }}')" 
+                            class="btn btn-danger btn-sm"
+                            style="padding: 0.25rem 0.75rem; font-size: 0.875rem;">
+                            Clear Cache
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="card">
+        <h2>Cache Actions</h2>
+        <div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
+            <button 
+                onclick="clearAllCache()" 
+                class="btn btn-danger"
+                style="background: #ef4444;">
+                🗑️ Clear All Cache
+            </button>
+            
+            <button 
+                onclick="clearLLMCache()" 
+                class="btn btn-warning"
+                style="background: #f59e0b;">
+                🤖 Clear LLM Extractions Only
+            </button>
+            
+            <button 
+                onclick="clearSchemaCache()" 
+                class="btn btn-warning"
+                style="background: #f59e0b;">
+                📋 Clear Schemas Only
+            </button>
+            
+            <a href="{{ url_for('sources') }}" class="btn btn-secondary">
+                ← Back to Sources
+            </a>
+        </div>
+        
+        <div style="margin-top: 1.5rem; padding: 1rem; background: #fef3c7; border-radius: 8px; border-left: 4px solid #f59e0b;">
+            <strong>⚠️ Warning:</strong> Clearing cache will force fresh data fetching on next extraction. This will increase extraction time and API usage.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function clearSourceCache(sourceName) {
+    if (!confirm(`Clear all cache for ${sourceName}?`)) return;
+    
+    fetch(`/cache/clear/${sourceName}`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Cache cleared for ${sourceName}`);
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => alert('Error: ' + error));
+}
+
+function clearAllCache() {
+    if (!confirm('Clear ALL cache? This will delete all cached data.')) return;
+    
+    fetch('/cache/clear-all', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('All cache cleared');
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => alert('Error: ' + error));
+}
+
+function clearLLMCache() {
+    if (!confirm('Clear all LLM extraction cache?')) return;
+    
+    fetch('/cache/clear-llm', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('LLM cache cleared');
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => alert('Error: ' + error));
+}
+
+function clearSchemaCache() {
+    if (!confirm('Clear all schema cache?')) return;
+    
+    fetch('/cache/clear-schemas', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Schema cache cleared');
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => alert('Error: ' + error));
+}
+</script>
+{% endblock %}

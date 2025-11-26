@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="stats">
+    <div class="stat-card">
+        <h3>Total Models</h3>
+        <div class="value">{{ total_models }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>API Sources</h3>
+        <div class="value">{{ total_sources }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Model Types</h3>
+        <div class="value">{{ model_types|length }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Model Types Distribution</h2>
+    {% if model_types %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for type, count in model_types.items() %}
+                <tr>
+                    <td><span class="badge badge-blue">{{ type }}</span></td>
+                    <td>{{ count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="empty-state">
+            <h3>No models yet</h3>
+            <p>Add a source and extract data to get started!</p>
+        </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>Recent Models</h2>
+    {% if recent_models %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Cost per Call</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for model in recent_models %}
+                <tr>
+                    <td><a href="/models/{{ model.id }}">{{ model.name }}</a></td>
+                    <td><span class="badge badge-blue">{{ model.model_type }}</span></td>
+                    <td>${{ "%.4f"|format(model.cost_per_call) }}</td>
+                    <td>{{ model.source.name }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="empty-state">
+            <h3>No models yet</h3>
+            <p>Add a source and extract data to get started!</p>
+        </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>API Sources</h2>
+    {% if sources %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Extractor</th>
+                    <th>Last Extracted</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for source in sources %}
+                <tr>
+                    <td>{{ source.name }}</td>
+                    <td><span class="badge badge-gray">{{ source.extractor_name }}</span></td>
+                    <td>{{ source.last_extracted.strftime('%Y-%m-%d %H:%M') if source.last_extracted else 'Never' }}</td>
+                    <td>
+                        {% if source.is_active %}
+                            <span class="badge badge-green">Active</span>
+                        {% else %}
+                            <span class="badge badge-gray">Inactive</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <div class="empty-state">
+            <h3>No sources configured</h3>
+            <p><a href="/sources" class="btn">Add your first source</a></p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
