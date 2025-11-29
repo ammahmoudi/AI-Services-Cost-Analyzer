@@ -1,0 +1,36 @@
+# Don't include these in Docker images
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Local development files
+.env
+*.db
+*.log
+
+# Cache directories (if using file backend)
+cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/__pycache__/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Documentation builds
+docs/_build/

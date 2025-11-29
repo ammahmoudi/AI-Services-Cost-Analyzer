@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-costs-db
+    environment:
+      POSTGRES_USER: ai_costs_user
+      POSTGRES_PASSWORD: ai_costs_password
+      POSTGRES_DB: ai_costs
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_costs_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # AI Services Cost Analyzer Application
+  app:
+    build: .
+    container_name: ai-costs-app
+    environment:
+      # Database configuration
+      DATABASE_URL: postgresql://ai_costs_user:ai_costs_password@postgres:5432/ai_costs
+      
+      # Cache backend (database or file)
+      CACHE_BACKEND: database
+      
+      # Flask configuration
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-change-this-secret-key-in-production}
+      
+      # Application settings
+      FLASK_ENV: production
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persist cache directory if using file backend
+      - ./cache:/app/cache
+      
+      # Mount .env for local development (optional)
+      # - ./.env:/app/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ai-costs-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@aicosts.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    profiles:
+      - admin  # Only start with: docker compose --profile admin up
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
