@@ -6,17 +6,39 @@
 <div class="container">
     <h1>📦 Cache Management</h1>
     
+    <div class="alert alert-info" style="margin-bottom: 2rem;">
+        <strong>ℹ️ Cache Backend:</strong> Currently using <strong>{{ cache_backend }}</strong> storage. 
+        {% if cache_backend == 'database' %}
+        Cache data is stored in the database for better performance and easier management.
+        {% else %}
+        Cache data is stored in files at <code>{{ cache_dir }}</code>.
+        {% endif %}
+        <small style="display: block; margin-top: 0.5rem;">
+            Change backend via <code>CACHE_BACKEND</code> environment variable (options: <code>database</code> or <code>file</code>).
+        </small>
+    </div>
+    
     <div class="card" style="margin-bottom: 2rem;">
         <h2>Cache Statistics</h2>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-top: 1rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem;">
             <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
                 <div style="font-size: 2rem; color: #3b82f6; font-weight: bold;">{{ cache_stats.total_cached_models }}</div>
                 <div style="color: #6b7280; margin-top: 0.5rem;">Total Cached Models</div>
             </div>
             
             <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
+                <div style="font-size: 2rem; color: #10b981; font-weight: bold;">{{ cache_stats.raw_count }}</div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">Raw Data</div>
+            </div>
+            
+            <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
                 <div style="font-size: 2rem; color: #10b981; font-weight: bold;">{{ cache_stats.schemas_count }}</div>
-                <div style="color: #6b7280; margin-top: 0.5rem;">Cached Schemas</div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">Schemas</div>
+            </div>
+            
+            <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
+                <div style="font-size: 2rem; color: #f59e0b; font-weight: bold;">{{ cache_stats.playground_count }}</div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">Playground Data</div>
             </div>
             
             <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
@@ -25,8 +47,8 @@
             </div>
             
             <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px;">
-                <div style="font-size: 2rem; color: #f59e0b; font-weight: bold;">{{ cache_stats.total_size_mb }}</div>
-                <div style="color: #6b7280; margin-top: 0.5rem;">Total Size (MB)</div>
+                <div style="font-size: 2rem; color: #6366f1; font-weight: bold;">{{ cache_stats.total_entries }}</div>
+                <div style="color: #6b7280; margin-top: 0.5rem;">Total Entries</div>
             </div>
         </div>
     </div>
@@ -38,9 +60,10 @@
                 <tr>
                     <th>Source</th>
                     <th>Models</th>
+                    <th>Raw</th>
                     <th>Schemas</th>
+                    <th>Playground</th>
                     <th>LLM Extractions</th>
-                    <th>Size (MB)</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -49,9 +72,10 @@
                 <tr>
                     <td><strong>{{ source_name }}</strong></td>
                     <td>{{ stats.models }}</td>
+                    <td>{{ stats.raw }}</td>
                     <td>{{ stats.schemas }}</td>
+                    <td>{{ stats.playground }}</td>
                     <td>{{ stats.llm_extractions }}</td>
-                    <td>{{ stats.size_mb }}</td>
                     <td>
                         <button 
                             onclick="clearSourceCache('{{ source_name }}')" 

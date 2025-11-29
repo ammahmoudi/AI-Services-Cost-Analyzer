@@ -134,6 +134,24 @@ class AIModel(Base):
     
     # Relationship
     source = relationship('APISource', back_populates='models')
+    cache_entries = relationship('CacheEntry', back_populates='model', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f"<AIModel(name='{self.name}', cost=${self.cost_per_call:.4f})>"
+
+
+class CacheEntry(Base):
+    """Cache storage for model data (raw, schema, playground, llm)"""
+    __tablename__ = 'cache_entries'
+    
+    id = Column(Integer, primary_key=True)
+    model_id = Column(Integer, ForeignKey('ai_models.id'), nullable=False)
+    cache_type = Column(String(50), nullable=False)  # 'raw', 'schema', 'playground', 'llm'
+    data = Column(JSON, nullable=False)  # The actual cached data
+    cached_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationship
+    model = relationship('AIModel', back_populates='cache_entries')
+    
+    def __repr__(self):
+        return f"<CacheEntry(model_id={self.model_id}, type='{self.cache_type}')>"

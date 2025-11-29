@@ -851,11 +851,14 @@ def extract_model_pricing(model_id):
 @app.route('/cache')
 def cache_management():
     """Cache management page"""
-    from ai_cost_manager.cache import cache_manager
+    from ai_cost_manager.cache import cache_manager, CACHE_BACKEND, CACHE_DIR
     
     stats = cache_manager.get_cache_stats()
     
-    return render_template('cache.html', cache_stats=stats)
+    return render_template('cache.html', 
+                         cache_stats=stats,
+                         cache_backend=CACHE_BACKEND,
+                         cache_dir=CACHE_DIR)
 
 
 @app.route('/cache/clear/<source_name>', methods=['POST'])
