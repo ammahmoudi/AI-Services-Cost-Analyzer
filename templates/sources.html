@@ -96,11 +96,31 @@
 <script>
 let extractSourceId = null;
 let progressPollInterval = null;
+let extractorFeatures = null;
 
 function showExtractDialog(sourceId, sourceName) {
     console.log('showExtractDialog called with:', sourceId, sourceName);
     extractSourceId = sourceId;
     
+    // Fetch extractor features first
+    fetch(`/api/sources/${sourceId}/features`)
+        .then(response => response.json())
+        .then(features => {
+            extractorFeatures = features;
+            showExtractModalWithFeatures(sourceName, features);
+        })
+        .catch(error => {
+            console.error('Failed to fetch extractor features:', error);
+            // Show modal anyway with all options disabled
+            showExtractModalWithFeatures(sourceName, {
+                supports_schemas: false,
+                supports_llm: false,
+                supports_playground: false
+            });
+        });
+}
+
+function showExtractModalWithFeatures(sourceName, features) {
     // Create modal dialog
     const modal = document.createElement('div');
     modal.id = 'extractModal';
@@ -109,14 +129,22 @@ function showExtractDialog(sourceId, sourceName) {
     const modalContent = document.createElement('div');
     modalContent.style.cssText = 'background: white; padding: 2rem; border-radius: 8px; max-width: 500px; width: 90%;';
     
+    const llmCheckbox = features.supports_llm ? 
+        '<input type="checkbox" id="useLlmCheck" style="margin-right: 0.5rem;">' :
+        '<input type="checkbox" id="useLlmCheck" disabled style="margin-right: 0.5rem; opacity: 0.5;" title="Not supported by this extractor">';
+    
+    const schemaCheckbox = features.supports_schemas ? 
+        '<input type="checkbox" id="fetchSchemasCheck" style="margin-right: 0.5rem;">' :
+        '<input type="checkbox" id="fetchSchemasCheck" disabled style="margin-right: 0.5rem; opacity: 0.5;" title="Not supported by this extractor">';
+    
     modalContent.innerHTML = `
         <h3 style="margin: 0 0 1rem 0;">Extract Models from ${sourceName}</h3>
         <p style="color: #6b7280; margin-bottom: 1.5rem;">Choose extraction options:</p>
         
         <div style="margin-bottom: 1rem;">
-            <label style="display: flex; align-items: center; cursor: pointer;">
-                <input type="checkbox" id="useLlmCheck" style="margin-right: 0.5rem;">
-                <span>🤖 Use LLM for pricing extraction</span>
+            <label style="display: flex; align-items: center; cursor: ${features.supports_llm ? 'pointer' : 'not-allowed'};">
+                ${llmCheckbox}
+                <span style="opacity: ${features.supports_llm ? '1' : '0.5'};">🤖 Use LLM for pricing extraction</span>
             </label>
             <small style="color: #6b7280; margin-left: 1.5rem; display: block; margin-top: 0.25rem;">
                 Extract detailed pricing information (pricing type, formula, cost units)
@@ -124,12 +152,12 @@ function showExtractDialog(sourceId, sourceName) {
         </div>
         
         <div style="margin-bottom: 1rem;">
-            <label style="display: flex; align-items: center; cursor: pointer;">
-                <input type="checkbox" id="fetchSchemasCheck" style="margin-right: 0.5rem;">
-                <span>📋 Fetch OpenAPI schemas</span>
+            <label style="display: flex; align-items: center; cursor: ${features.supports_schemas ? 'pointer' : 'not-allowed'};">
+                ${schemaCheckbox}
+                <span style="opacity: ${features.supports_schemas ? '1' : '0.5'};">📋 Fetch OpenAPI schemas</span>
             </label>
             <small style="color: #6b7280; margin-left: 1.5rem; display: block; margin-top: 0.25rem;">
-                Get input/output schema definitions (slower but more complete)
+                Get input/output schema definitions ${features.supports_schemas ? '(slower but more complete)' : '(not supported)'}
             </small>
         </div>
         

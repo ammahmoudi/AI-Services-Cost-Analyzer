@@ -149,6 +149,27 @@ def delete_source(source_id):
     return redirect(url_for('sources'))
 
 
+@app.route('/api/sources/<int:source_id>/features', methods=['GET'])
+def get_source_features(source_id):
+    """Get extractor feature support for a specific source"""
+    from extractors import get_extractor_features
+    
+    session = get_session()
+    
+    try:
+        source = session.query(APISource).filter_by(id=source_id).first()
+        if not source:
+            return jsonify({'error': 'Source not found'}), 404
+        
+        features = get_extractor_features(source.extractor_name)
+        return jsonify(features)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
 @app.route('/sources/<int:source_id>/extract', methods=['POST'])
 def extract_source(source_id):
     """Extract data from a specific source"""
@@ -161,20 +182,27 @@ def extract_source(source_id):
         if not source:
             return jsonify({'error': 'Source not found'}), 404
         
+        # Store source attributes we need before potentially detaching
+        source_name = source.name
+        source_url = source.url
+        source_extractor_name = source.extractor_name
+        source_db_id = source.id
+        
         # Get options from request
         use_llm = request.json.get('use_llm', False) if request.is_json else False
         fetch_schemas = request.json.get('fetch_schemas', False) if request.is_json else False
         force_refresh = request.json.get('force_refresh', False) if request.is_json else False
         
         # Create progress tracker
-        progress_tracker = ProgressTracker(source.name, source.id)
+        progress_tracker = ProgressTracker(source_name, source_db_id)
         
-        # Get extractor
-        extractor = get_extractor(source.extractor_name, source.url)
+        # Get extractor class and instantiate it
+        extractor_class = get_extractor(source_extractor_name)
+        extractor = extractor_class(source_url=source_url, fetch_schemas=fetch_schemas, use_llm=use_llm)
         
-        # Enable options if requested
-        if fetch_schemas and hasattr(extractor, 'fetch_schemas'):
-            extractor.fetch_schemas = True
+        # Enable force refresh if requested
+        if force_refresh and hasattr(extractor, 'force_refresh'):
+            extractor.force_refresh = True
         
         if use_llm and hasattr(extractor, 'use_llm'):
             extractor.use_llm = True
@@ -205,7 +233,7 @@ def extract_source(source_id):
             }
             
             existing_model = session.query(AIModel).filter_by(
-                source_id=source.id,
+                source_id=source_db_id,
                 model_id=model_data['model_id']
             ).first()
             
@@ -216,17 +244,20 @@ def extract_source(source_id):
                 updated_count += 1
                 progress_tracker.increment_updated()
             else:
-                model = AIModel(source_id=source.id, **filtered_data)
+                model = AIModel(source_id=source_db_id, **filtered_data)
                 session.add(model)
                 new_count += 1
                 progress_tracker.increment_new()
         
-        # Update last extracted timestamp
-        source.last_extracted = datetime.utcnow()
-        session.commit()
-        
-        # Refresh the source to ensure the timestamp is persisted
-        session.refresh(source)
+        # Re-query source again to update last extracted timestamp
+        source = session.query(APISource).filter_by(id=source_db_id).first()
+        if source:
+            source.last_extracted = datetime.utcnow()
+            session.commit()
+            # Refresh the source to ensure the timestamp is persisted
+            session.refresh(source)
+        else:
+            session.commit()
         
         flash(f'Extracted {len(models_data)} models ({new_count} new, {updated_count} updated)', 'success')
         

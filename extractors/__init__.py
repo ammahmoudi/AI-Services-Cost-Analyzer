@@ -5,6 +5,8 @@ Central registry for all available extractors.
 """
 from extractors.fal_extractor import FalAIExtractor
 from extractors.together_extractor import TogetherAIExtractor
+from extractors.avalai_extractor import AvalAIExtractor
+from extractors.metisai_extractor import MetisAIExtractor
 
 # Registry of available extractors (with aliases)
 EXTRACTORS = {
@@ -14,12 +16,44 @@ EXTRACTORS = {
     'together': TogetherAIExtractor,
     'togetherai': TogetherAIExtractor,  # Alias
     'together.ai': TogetherAIExtractor,  # Alias
+    'avalai': AvalAIExtractor,
+    'aval': AvalAIExtractor,  # Alias
+    'aval.ai': AvalAIExtractor,  # Alias
+    'metisai': MetisAIExtractor,
+    'metis': MetisAIExtractor,  # Alias
+    'metis.ai': MetisAIExtractor,  # Alias
 }
 
 # Primary extractor names (for display)
 PRIMARY_EXTRACTORS = {
     'fal': 'Fal.ai (aliases: falai, fal.ai)',
     'together': 'Together AI (aliases: togetherai, together.ai)',
+    'avalai': 'AvalAI (aliases: aval, aval.ai)',
+    'metisai': 'MetisAI (aliases: metis, metis.ai)',
+}
+
+# Extractor feature support matrix
+EXTRACTOR_FEATURES = {
+    'fal': {
+        'supports_schemas': True,
+        'supports_llm': True,
+        'supports_playground': True,
+    },
+    'together': {
+        'supports_schemas': False,
+        'supports_llm': True,
+        'supports_playground': False,
+    },
+    'avalai': {
+        'supports_schemas': False,
+        'supports_llm': True,
+        'supports_playground': False,
+    },
+    'metisai': {
+        'supports_schemas': False,
+        'supports_llm': True,
+        'supports_playground': False,
+    },
 }
 
 
@@ -62,3 +96,35 @@ def list_extractors(include_aliases=False):
         return list(EXTRACTORS.keys())
     else:
         return list(PRIMARY_EXTRACTORS.keys())
+
+
+def get_extractor_features(extractor_name: str) -> dict:
+    """
+    Get feature support information for an extractor.
+    
+    Args:
+        extractor_name: Name of the extractor (e.g., 'fal')
+        
+    Returns:
+        Dict with feature flags (supports_schemas, supports_llm, etc.)
+    """
+    # Normalize to primary name
+    extractor_class = EXTRACTORS.get(extractor_name.lower())
+    if not extractor_class:
+        return {
+            'supports_schemas': False,
+            'supports_llm': False,
+            'supports_playground': False,
+        }
+    
+    # Find primary name
+    for primary_name, cls in EXTRACTORS.items():
+        if cls == extractor_class and primary_name in EXTRACTOR_FEATURES:
+            return EXTRACTOR_FEATURES[primary_name]
+    
+    # Default to no features
+    return {
+        'supports_schemas': False,
+        'supports_llm': False,
+        'supports_playground': False,
+    }

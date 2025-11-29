@@ -7,6 +7,7 @@ A comprehensive tool for tracking, analyzing, and comparing pricing across multi
 - **Multi-Source Cost Extraction**: Support for multiple AI providers including:
   - fal.ai (with authenticated playground pricing)
   - Together AI
+  - AvalAI (Iranian AI aggregator with transparent pricing)
   - More sources coming soon
 
 - **Intelligent LLM-Based Extraction**: Uses OpenRouter LLMs to intelligently parse and extract pricing data from various formats (HTML, JSON, Markdown)
@@ -207,7 +208,7 @@ ai-costs/
 
 ## Default Sources
 
-The system automatically seeds two default sources on first initialization:
+The system automatically seeds four default sources on first initialization:
 
 1. **fal.ai** (`extractor: fal`)
    - URL: https://fal.ai/models
@@ -216,6 +217,18 @@ The system automatically seeds two default sources on first initialization:
 2. **Together AI** (`extractor: together`)
    - URL: https://api.together.xyz/models
    - JSON API-based extraction
+
+3. **AvalAI** (`extractor: avalai`)
+   - URL: https://docs.avalai.ir/fa/pricing.md
+   - Iranian AI aggregator with transparent pricing (100% aligned with base provider rates)
+   - Supports OpenAI, Google, Anthropic, XAI, Meta, Mistral, Alibaba, DeepSeek, and more
+   - New users get 20,000 IRR free credit
+
+4. **MetisAI** (`extractor: metisai`)
+   - URL: https://api.metisai.ir/api/v1/meta/providers/pricing
+   - Iranian AI aggregator with comprehensive pricing API
+   - Supports OpenAI, Google, Anthropic, Cohere, Meta, Mistral, DeepSeek, Grok, and more
+   - Includes LLM, embedding, image generation, video, audio, and search models
 
 ## Development
 

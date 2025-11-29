@@ -127,17 +127,18 @@ def cmd_extract(args):
             print(f"{'='*60}")
             
             try:
-                # Get extractor
-                extractor = get_extractor(source.extractor_name, source.url)
+                # Get extractor class and instantiate it
+                extractor_class = get_extractor(source.extractor_name)
+                extractor = extractor_class(
+                    source_url=source.url,
+                    fetch_schemas=args.fetch_schemas if hasattr(args, 'fetch_schemas') else False,
+                    use_llm=False
+                )
                 
                 # Enable force refresh if requested
                 if args.force_refresh and hasattr(extractor, 'force_refresh'):
                     extractor.force_refresh = True
                     print(f"  🔄 Force refresh enabled - bypassing cache for {source.name}")
-                
-                # Enable schema fetching if requested (only for fal extractor)
-                if args.fetch_schemas and hasattr(extractor, 'fetch_schemas'):
-                    extractor.fetch_schemas = True
                     print(f"  📋 Schema fetching enabled for {source.name}")
                 
                 # Enable LLM extraction if requested

@@ -68,7 +68,19 @@ def _seed_default_sources():
             'url': 'https://api.together.xyz/models',
             'extractor_name': 'together',
             'is_active': True
-        }
+        },
+        {
+            'name': 'AvalAI',
+            'url': 'https://docs.avalai.ir/fa/pricing.md',
+            'extractor_name': 'avalai',
+            'is_active': True
+        },
+        {
+            'name': 'MetisAI',
+            'url': 'https://api.metisai.ir/api/v1/meta/providers/pricing',
+            'extractor_name': 'metisai',
+            'is_active': True
+        },
     ]
     
     session = get_session()
