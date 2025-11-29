@@ -28,6 +28,39 @@ class LLMConfiguration(Base):
         return f"<LLMConfiguration(model='{self.model_name}', active={self.is_active})>"
 
 
+class ExtractorAPIKey(Base):
+    """API keys for different extractors"""
+    __tablename__ = 'extractor_api_keys'
+    
+    id = Column(Integer, primary_key=True)
+    extractor_name = Column(String(50), unique=True, nullable=False)  # e.g., 'together', 'openai'
+    api_key = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<ExtractorAPIKey(extractor='{self.extractor_name}', active={self.is_active})>"
+
+
+class AuthSettings(Base):
+    """Authentication settings for API sources that require login"""
+    __tablename__ = 'auth_settings'
+    
+    id = Column(Integer, primary_key=True)
+    source_name = Column(String(100), unique=True, nullable=False)  # e.g., 'fal.ai'
+    cookies = Column(Text, nullable=True)  # JSON string of cookies
+    headers = Column(Text, nullable=True)  # JSON string of custom headers
+    session_data = Column(Text, nullable=True)  # Additional session data
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    notes = Column(Text, nullable=True)  # User notes about the auth
+    
+    def __repr__(self):
+        return f"<AuthSettings(source='{self.source_name}', active={self.is_active})>"
+
+
 class APISource(Base):
     """Represents an API source (e.g., fal.ai, OpenAI, etc.)"""
     __tablename__ = 'api_sources'

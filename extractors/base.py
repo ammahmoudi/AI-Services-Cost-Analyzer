@@ -34,9 +34,9 @@ class BaseExtractor(ABC):
         """
         url = url or self.source_url
         
-        # Set a reasonable timeout to avoid freezing
+        # Set a reasonable timeout to avoid freezing (30 seconds for slow APIs)
         if 'timeout' not in kwargs:
-            kwargs['timeout'] = 10  # 10 seconds default timeout
+            kwargs['timeout'] = 30
         
         try:
             if method.upper() == 'GET':

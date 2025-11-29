@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}Authentication Settings - AI Cost Manager{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">
+        <i class="fas fa-key"></i> Authentication Settings
+    </h1>
+    
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i>
+        Add authentication cookies to access fal.ai playground pricing (shows actual costs like $0.00111 instead of $0).
+        Only the essential session cookies are needed.
+    </div>
+
+    <!-- Add New Auth Settings -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="fas fa-plus"></i> Add fal.ai Authentication
+            </h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('save_auth_settings') }}">
+                <input type="hidden" name="source_name" value="fal.ai">
+                
+                <div class="alert alert-light border">
+                    <strong>Quick Setup:</strong> Only 2-3 cookies needed for playground pricing!
+                </div>
+
+                <div class="mb-3">
+                    <label for="wos_session" class="form-label">
+                        <strong>wos-session</strong> <span class="badge bg-danger">Required</span>
+                    </label>
+                    <input type="text" class="form-control font-monospace" id="wos_session" name="wos_session" 
+                           placeholder="Fe26.2*1*0fbdfe67..." required>
+                    <small class="form-text text-muted">Main session cookie (starts with Fe26.2)</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="cf_clearance" class="form-label">
+                        <strong>cf_clearance</strong> <span class="badge bg-warning">Recommended</span>
+                    </label>
+                    <input type="text" class="form-control font-monospace" id="cf_clearance" name="cf_clearance" 
+                           placeholder="KjPCposwHt3aX...">
+                    <small class="form-text text-muted">Cloudflare clearance (bypass bot detection)</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="unify_session_id" class="form-label">
+                        <strong>unify_session_id</strong> <span class="badge bg-secondary">Optional</span>
+                    </label>
+                    <input type="text" class="form-control font-monospace" id="unify_session_id" name="unify_session_id" 
+                           placeholder="1207b6da-1148-4a3a-ade0-f8776e07f1ec">
+                    <small class="form-text text-muted">Additional session identifier</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="notes" class="form-label">Notes <span class="text-muted">(Optional)</span></label>
+                    <input type="text" class="form-control" id="notes" name="notes" 
+                           placeholder="e.g., Added on 2025-11-29, expires in 7 days">
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="is_active" name="is_active" checked>
+                    <label class="form-check-label" for="is_active">
+                        <i class="fas fa-check-circle text-success"></i> Active
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Save Authentication
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Existing Auth Configurations -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="fas fa-list"></i> Saved Authentications
+            </h5>
+        </div>
+        <div class="card-body">
+            {% if auth_configs %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Status</th>
+                                <th>Has Cookies</th>
+                                <th>Created</th>
+                                <th>Updated</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for auth in auth_configs %}
+                            <tr>
+                                <td>
+                                    <strong>{{ auth.source_name }}</strong>
+                                    {% if auth.notes %}
+                                        <br><small class="text-muted">{{ auth.notes[:80] }}{% if auth.notes|length > 80 %}...{% endif %}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if auth.is_active %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check-circle"></i> Active
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">
+                                            <i class="fas fa-times-circle"></i> Inactive
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if auth.cookies %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-cookie"></i> Yes
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-danger">No</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="text-muted">N/A</span>
+                                </td>
+                                <td>
+                                    <small>{{ auth.created_at.strftime('%Y-%m-%d %H:%M') if auth.created_at else 'N/A' }}</small>
+                                </td>
+                                <td>
+                                    <small>{{ auth.updated_at.strftime('%Y-%m-%d %H:%M') if auth.updated_at else 'N/A' }}</small>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <!-- Toggle Active -->
+                                        <form method="POST" action="{{ url_for('toggle_auth_settings', auth_id=auth.id) }}" style="display:inline;">
+                                            <button type="submit" class="btn btn-outline-warning" 
+                                                    title="{% if auth.is_active %}Disable{% else %}Enable{% endif %}">
+                                                <i class="fas fa-power-off"></i>
+                                            </button>
+                                        </form>
+                                        
+                                        <!-- Delete -->
+                                        <form method="POST" action="{{ url_for('delete_auth_settings', auth_id=auth.id) }}" 
+                                              onsubmit="return confirm('Delete authentication for {{ auth.source_name }}?');" style="display:inline;">
+                                            <button type="submit" class="btn btn-outline-danger">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted">No authentication settings configured yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Help Section -->
+    <div class="card mt-4">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0">
+                <i class="fas fa-question-circle"></i> How to Get the wos-session Cookie
+            </h5>
+        </div>
+        <div class="card-body">
+            <h6>Step-by-Step Guide:</h6>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 class="text-primary"><i class="fas fa-chrome"></i> Method 1: Application Tab (Easiest)</h6>
+                    <ol>
+                        <li>Login to <a href="https://fal.ai" target="_blank">fal.ai</a></li>
+                        <li>Press <kbd>F12</kbd> to open Developer Tools</li>
+                        <li>Go to <strong>Application</strong> tab (or <strong>Storage</strong> in Firefox)</li>
+                        <li>In the left sidebar, expand <strong>Cookies</strong></li>
+                        <li>Click on <code>https://fal.ai</code></li>
+                        <li>Find <code>wos-session</code> in the list</li>
+                        <li>Double-click the <strong>Value</strong> column and copy it (starts with <code>Fe26.2*1*...</code>)</li>
+                        <li>Paste it in the form above</li>
+                    </ol>
+                </div>
+                
+                <div class="col-md-6">
+                    <h6 class="text-primary"><i class="fas fa-network-wired"></i> Method 2: Network Tab</h6>
+                    <ol>
+                        <li>Login to <a href="https://fal.ai" target="_blank">fal.ai</a></li>
+                        <li>Press <kbd>F12</kbd> → go to <strong>Network</strong> tab</li>
+                        <li>Refresh the page (<kbd>Ctrl+R</kbd>)</li>
+                        <li>Click on any request to <code>fal.ai</code></li>
+                        <li>Scroll down to <strong>Request Headers</strong></li>
+                        <li>Find the <code>cookie:</code> header</li>
+                        <li>Look for <code>wos-session=Fe26.2*1*...</code></li>
+                        <li>Copy everything after <code>wos-session=</code> until the next semicolon</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <div class="alert alert-success mt-3">
+                <i class="fas fa-lightbulb"></i>
+                <strong>Pro Tip:</strong> The wos-session cookie is very long (~2800 characters). 
+                Make sure you copy the entire value starting with <code>Fe26.2*1*</code> and ending before the next cookie or semicolon.
+            </div>
+            
+            <div class="alert alert-warning mb-0">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Important:</strong> Cookies may expire after several days. 
+                If you start seeing $0 pricing again, come back here and update your wos-session cookie.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// No edit modal needed for simplified version
+</script>
+{% endblock %}

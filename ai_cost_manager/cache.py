@@ -281,6 +281,16 @@ class CacheManager:
         """Clear all cache."""
         self.clear_cache()
     
+    def clear_model_cache(self, source_name: str, model_id: str) -> None:
+        """
+        Clear cache for a specific model.
+        
+        Args:
+            source_name: Name of the API source
+            model_id: Model identifier
+        """
+        self.clear_cache(source_name, model_id)
+    
     def clear_llm_cache(self) -> None:
         """Clear only LLM extraction cache files."""
         for source_dir in self.cache_dir.iterdir():

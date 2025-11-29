@@ -63,6 +63,62 @@ class LLMPricingExtractor:
         credits = model_data.get('creditsRequired', 0)
         model_type = model_data.get('model_type', 'other')
         
+        # Extract additional context from all available sources
+        tags = model_data.get('tags', [])
+        raw_metadata = model_data.get('raw_metadata', {})
+        input_schema = model_data.get('input_schema', {})
+        output_schema = model_data.get('output_schema', {})
+        playground_data = model_data.get('playground_data', {})
+        
+        # Build comprehensive context
+        context_parts = []
+        
+        # Add tags/categories
+        if tags:
+            context_parts.append(f"Categories/Tags: {', '.join(tags) if isinstance(tags, list) else tags}")
+        
+        # Add schema information (parameter hints)
+        schema_hints = []
+        if input_schema and isinstance(input_schema, dict):
+            properties = input_schema.get('properties', {})
+            if 'resolution' in properties:
+                schema_hints.append("supports resolution parameter")
+            if 'duration' in properties or 'num_frames' in properties:
+                schema_hints.append("supports duration/frames parameter")
+            if 'steps' in properties or 'num_inference_steps' in properties:
+                schema_hints.append("supports inference steps parameter")
+        
+        if schema_hints:
+            context_parts.append(f"Model capabilities: {', '.join(schema_hints)}")
+        
+        # Add playground pricing if available
+        if playground_data and isinstance(playground_data, dict):
+            playground_price = playground_data.get('price')
+            playground_pricing_text = playground_data.get('pricing_text')
+            if playground_price:
+                context_parts.append(f"Playground price: {playground_price} credits")
+            if playground_pricing_text:
+                context_parts.append(f"Playground pricing: {playground_pricing_text}")
+        
+        # Add raw metadata pricing details
+        if raw_metadata and isinstance(raw_metadata, dict):
+            # Check for pricing override
+            pricing_override = raw_metadata.get('pricingInfoOverride')
+            if pricing_override:
+                context_parts.append(f"Pricing override: {pricing_override}")
+            
+            # Check for billing message
+            billing_msg = raw_metadata.get('billingMessage')
+            if billing_msg:
+                context_parts.append(f"Billing info: {billing_msg}")
+            
+            # Check for machine type (cost indicator)
+            machine_type = raw_metadata.get('machineType')
+            if machine_type:
+                context_parts.append(f"Machine type: {machine_type}")
+        
+        additional_context = "\n".join(context_parts) if context_parts else "No additional context available"
+        
         prompt = f"""Extract pricing information from this AI model data and return a JSON object.
 
 Model Name: {model_name}
@@ -70,22 +126,73 @@ Model Type: {model_type}
 Credits Required: {credits}
 Pricing Info Text: "{pricing_info}"
 
-Analyze the pricing and return a JSON object with these fields:
-- pricing_type: one of ["fixed", "per_token", "per_second", "per_image", "per_video", "per_request", "tiered", "variable", "unknown"]
-- pricing_formula: human-readable description of how cost is calculated
-- input_cost_per_unit: numeric cost per input unit (or null)
-- output_cost_per_unit: numeric cost per output unit (or null)
-- cost_unit: unit of measurement ("tokens", "seconds", "images", "calls", "minutes", etc.)
-- pricing_variables: object with any variables that affect pricing (e.g., {{"resolution": "affects cost", "duration": "affects cost"}})
-- estimated_cost_per_call: estimated cost in USD for a typical call
-- notes: any additional pricing notes
+ADDITIONAL CONTEXT:
+{additional_context}
 
-Examples:
-- "$0.045/sec" → pricing_type: "per_second", cost_unit: "seconds", input_cost_per_unit: 0.045
-- "100 credits" → pricing_type: "fixed", cost_unit: "calls", estimated_cost_per_call: 1.00 (if 1 credit = $0.01)
-- "$0.03/1K input tokens, $0.06/1K output tokens" → pricing_type: "per_token", input_cost_per_unit: 0.00003, output_cost_per_unit: 0.00006
+MODEL TYPE DETECTION HINTS:
+- If model name contains "video", "seedance", "mochi", "runway", "sora", "pika", or pricing mentions "video"/"frame"/"fps", use "video-generation"
+- If pricing is per video (e.g., "$0.14/video"), use "video-generation" and pricing_type="per_video"
+- If model name contains "image", "flux", "dall-e", "midjourney", "stable-diffusion", or pricing mentions "image"/"megapixel"/"MP", use "image-generation"
+- If pricing mentions "token" or "per million", use "text-generation" or "chat"
+- For text-to-video, image-to-video models: use "video-generation" and add the specific type (e.g., "text-to-video") to tags array
+- For text-to-image, image-to-image models: use "image-generation" and add the specific type (e.g., "text-to-image") to tags array
+- For image-to-text models: use "text-generation" and add "image-to-text" to tags array
 
-Return ONLY valid JSON, no markdown or explanation:"""
+IMPORTANT: Analyze the pricing carefully and return a JSON object with these exact fields:
+
+REQUIRED FIELDS:
+- model_type: MUST be EXACTLY one of these values: "text-generation", "image-generation", "video-generation", "audio-generation", "embeddings", "code-generation", "chat", "completion", "rerank", "moderation", "other"
+  DO NOT use values like "text-to-video", "image-to-video", "text-to-image" - use the base generation type and add specifics to tags
+- pricing_type: MUST be one of: "per_token", "per_image", "per_video", "per_minute", "per_second", "per_call", "hourly", "fixed", "tiered", "per_megapixel"
+- cost_unit: MUST match pricing_type - "token", "image", "video", "minute", "second", "call", "hour", "megapixel"
+- cost_per_call: numeric value in USD for ONE typical call (required, use 0 if unknown)
+
+OPTIONAL FIELDS:
+- pricing_formula: human-readable description
+- input_cost_per_unit: numeric cost per input unit (e.g., per 1K tokens)
+- output_cost_per_unit: numeric cost per output unit
+- credits_required: numeric credits needed per call
+- pricing_variables: object with pricing factors like resolution, duration, steps
+- description: clear explanation of the pricing model
+- tags: array of relevant tags (e.g., ["fast", "high-quality", "enterprise", "open-source"])
+- category: original source category if available
+
+PRICING FORMAT EXAMPLES:
+
+1. Text models (tokens):
+   "$0.15 / 1M input tokens, $0.60 / 1M output tokens"
+   → {{"model_type": "text-generation", "pricing_type": "per_token", "cost_unit": "token", "input_cost_per_unit": 0.00015, "output_cost_per_unit": 0.0006, "cost_per_call": 0.00075}}
+
+2. Image models (megapixels):
+   "$0.025/MP | 40.0 img/$1 | 28 steps"
+   → {{"model_type": "image-generation", "pricing_type": "per_image", "cost_unit": "megapixel", "cost_per_call": 0.025, "pricing_variables": {{"price_per_mp": 0.025, "images_per_dollar": 40.0, "default_steps": 28}}, "tags": ["fast", "affordable"]}}
+
+3. Video models:
+   "$0.19 per 5s 720p video"
+   → {{"model_type": "video-generation", "pricing_type": "per_video", "cost_unit": "video", "cost_per_call": 0.19, "pricing_variables": {{"duration_seconds": 5, "resolution": "720p"}}, "tags": ["short-form", "hd"]}}
+
+3b. Text-to-video models:
+   "AnimateDiff - text to video"
+   → {{"model_type": "video-generation", "pricing_type": "per_video", "cost_unit": "video", "cost_per_call": 0.25, "tags": ["text-to-video", "animation", "ai-generated"]}}
+
+4. Audio models:
+   "$0.006 per minute"
+   → {{"model_type": "audio-generation", "pricing_type": "per_minute", "cost_unit": "minute", "cost_per_call": 0.006}}
+
+5. Credits-based:
+   "2.5 credits" (assuming 1 credit = $0.01)
+   → {{"model_type": "image-generation", "pricing_type": "per_call", "cost_unit": "call", "cost_per_call": 0.025, "credits_required": 2.5}}
+
+6. Hourly:
+   "$2.40/hour"
+   → {{"model_type": "other", "pricing_type": "hourly", "cost_unit": "hour", "cost_per_call": 2.40}}
+
+CRITICAL RULES:
+- If pricing is in $/MP (dollars per megapixel), use pricing_type="per_image" and cost_unit="megapixel"
+- If pricing shows "img/$" (images per dollar), calculate: cost_per_call = 1 / images_per_dollar
+- Always extract numeric values from pricing_variables (e.g., "28 steps" → 28, not "28")
+- cost_per_call should be a realistic USD amount (typically 0.0001 to 10.0)
+- Return ONLY valid JSON with no markdown, no explanations, no code blocks"""
         
         return prompt
     
@@ -113,7 +220,7 @@ Return ONLY valid JSON, no markdown or explanation:"""
             f'{self.config.base_url}/chat/completions',
             headers=headers,
             json=data,
-            timeout=30
+            timeout=60  # Increased from 30s to prevent timeouts with complex prompts
         )
         
         # Handle rate limiting and server errors

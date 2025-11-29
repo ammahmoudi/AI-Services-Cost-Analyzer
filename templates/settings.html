@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - AI Cost Manager{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .tabs {
+        display: flex;
+        border-bottom: 2px solid #e5e7eb;
+        margin-bottom: 2rem;
+        gap: 0.5rem;
+    }
+    
+    .tab {
+        padding: 0.75rem 1.5rem;
+        background: transparent;
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: #6b7280;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .tab:hover {
+        color: #2563eb;
+        background: #f9fafb;
+    }
+    
+    .tab.active {
+        color: #2563eb;
+        border-bottom-color: #2563eb;
+        font-weight: 600;
+    }
+    
+    .tab-content {
+        display: none;
+    }
+    
+    .tab-content.active {
+        display: block;
+    }
+    
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+    
+    .api-key-input {
+        position: relative;
+    }
+    
+    .api-key-input input {
+        padding-right: 100px;
+    }
+    
+    .toggle-key {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #6b7280;
+        cursor: pointer;
+        font-size: 0.85rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .toggle-key:hover {
+        color: #2563eb;
+    }
+    
+    .help-text {
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+    
+    .section-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .key-status {
+        display: inline-block;
+        margin-left: 0.5rem;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    
+    .key-status.configured {
+        background: #d1fae5;
+        color: #065f46;
+    }
+    
+    .key-status.missing {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>⚙️ Settings</h2>
+    
+    <div class="tabs">
+        <button class="tab active" data-tab="llm">LLM Configuration</button>
+        <button class="tab" data-tab="extractors">Extractor API Keys</button>
+    </div>
+    
+    <!-- LLM Configuration Tab -->
+    <div class="tab-content active" id="llm-tab">
+        <h3 class="section-title">LLM API Configuration</h3>
+        
+        <form method="POST" action="/settings/llm">
+            {% if llm_config %}
+                <input type="hidden" name="config_id" value="{{ llm_config.id }}">
+            {% endif %}
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="provider">Provider</label>
+                    <input type="text" id="provider" name="provider" 
+                           value="{{ llm_config.provider if llm_config else 'openrouter' }}" readonly>
+                    <div class="help-text">Currently only OpenRouter is supported</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="model_name">Model Name</label>
+                    <input type="text" id="model_name" name="model_name" 
+                           value="{{ llm_config.model_name if llm_config else 'openai/gpt-4o-mini' }}" required>
+                    <div class="help-text">e.g., openai/gpt-4o-mini, anthropic/claude-3.5-sonnet</div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="api_key">API Key</label>
+                <div class="api-key-input">
+                    <input type="password" id="api_key" name="api_key" 
+                           value="{{ llm_config.api_key if llm_config else '' }}" 
+                           placeholder="sk-or-v1-..." required>
+                    <button type="button" class="toggle-key" onclick="togglePassword('api_key')">Show</button>
+                </div>
+                <div class="help-text">Get your API key from <a href="https://openrouter.ai/keys" target="_blank">OpenRouter</a></div>
+            </div>
+            
+            <div class="form-group">
+                <label for="base_url">Base URL</label>
+                <input type="text" id="base_url" name="base_url" 
+                       value="{{ llm_config.base_url if llm_config else 'https://openrouter.ai/api/v1' }}" required>
+                <div class="help-text">API endpoint URL</div>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="is_active" {{ 'checked' if not llm_config or llm_config.is_active else '' }}>
+                    Active
+                </label>
+                <div class="help-text">Enable LLM extraction for pricing data</div>
+            </div>
+            
+            <button type="submit" class="btn btn-success">Save LLM Configuration</button>
+        </form>
+    </div>
+    
+    <!-- Extractor API Keys Tab -->
+    <div class="tab-content" id="extractors-tab">
+        <h3 class="section-title">Extractor API Keys & Authentication</h3>
+        <p style="color: #6b7280; margin-bottom: 1.5rem;">
+            Configure API keys and authentication for different data extractors. These are optional - extractors will use fallback methods if not provided.
+        </p>
+        
+        <form method="POST" action="/settings/extractors">
+            <!-- Together AI -->
+            <div class="form-group">
+                <label for="together_api_key">
+                    <strong>Together AI</strong> - API Key
+                    {% if together_key %}
+                        <span class="key-status configured">✓ Configured</span>
+                    {% else %}
+                        <span class="key-status missing">Not configured</span>
+                    {% endif %}
+                </label>
+                <div class="api-key-input">
+                    <input type="password" id="together_api_key" name="together_api_key" 
+                           value="{{ together_key.api_key if together_key else '' }}" 
+                           placeholder="Enter your Together AI API key">
+                    <button type="button" class="toggle-key" onclick="togglePassword('together_api_key')">Show</button>
+                </div>
+                <div class="help-text">
+                    Get your API key from <a href="https://api.together.xyz/settings/api-keys" target="_blank">Together AI</a>. 
+                    If not provided, will scrape public pricing page.
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="together_active" {{ 'checked' if not together_key or together_key.is_active else '' }}>
+                    Active
+                </label>
+                <div class="help-text">Enable Together AI API key usage</div>
+            </div>
+            
+            <hr style="margin: 2rem 0; border: none; border-top: 1px solid #e5e7eb;">
+            
+            <!-- fal.ai Authentication -->
+            <div class="form-group">
+                <label for="wos_session">
+                    <strong>fal.ai</strong> - Session Cookie (wos-session)
+                    {% if fal_auth and fal_auth.is_active %}
+                        <span class="key-status configured">✓ Configured</span>
+                    {% else %}
+                        <span class="key-status missing">Not configured</span>
+                    {% endif %}
+                </label>
+                <div class="api-key-input">
+                    <input type="password" id="wos_session" name="wos_session" 
+                           value="{{ fal_auth.cookies|from_json|attr('wos-session') if fal_auth and fal_auth.cookies else '' }}" 
+                           placeholder="Fe26.2*1*0fbdfe67...">
+                    <button type="button" class="toggle-key" onclick="togglePassword('wos_session')">Show</button>
+                </div>
+                <details style="margin-top: 0.5rem;">
+                    <summary style="cursor: pointer; color: #2563eb; font-size: 0.85rem;">How to get the wos-session cookie?</summary>
+                    <div style="margin-top: 0.5rem; padding: 0.75rem; background: #f9fafb; border-radius: 4px; font-size: 0.85rem;">
+                        <p><strong>Quick Steps:</strong></p>
+                        <ol style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                            <li>Login to <a href="https://fal.ai" target="_blank">fal.ai</a></li>
+                            <li>Press <kbd>F12</kbd> → go to <strong>Application</strong> tab</li>
+                            <li>Expand <strong>Cookies</strong> → click <code>https://fal.ai</code></li>
+                            <li>Find <code>wos-session</code> and copy its value (starts with <code>Fe26.2*1*</code>)</li>
+                        </ol>
+                        <p style="margin-top: 0.5rem;"><strong>Note:</strong> Needed for accurate playground pricing ($0.00111 instead of $0). Cookie may expire after several days.</p>
+                    </div>
+                </details>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="fal_active" {{ 'checked' if not fal_auth or fal_auth.is_active else '' }}>
+                    Active
+                </label>
+                <div class="help-text">Enable fal.ai authentication for accurate pricing</div>
+            </div>
+            
+            <button type="submit" class="btn btn-success">Save All Extractor Settings</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabName = tab.dataset.tab;
+            
+            // Update active tab
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            // Update active content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(tabName + '-tab').classList.add('active');
+        });
+    });
+    
+    // Toggle password visibility
+    function togglePassword(inputId) {
+        const input = document.getElementById(inputId);
+        const button = input.nextElementSibling;
+        
+        if (input.type === 'password') {
+            input.type = 'text';
+            button.textContent = 'Hide';
+        } else {
+            input.type = 'password';
+            button.textContent = 'Show';
+        }
+    }
+</script>
+{% endblock %}

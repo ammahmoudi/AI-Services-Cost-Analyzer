@@ -23,17 +23,15 @@ PRIMARY_EXTRACTORS = {
 }
 
 
-def get_extractor(extractor_name: str, source_url: str, **kwargs):
+def get_extractor(extractor_name: str):
     """
-    Get an extractor instance by name.
+    Get an extractor class by name.
     
     Args:
         extractor_name: Name of the extractor (e.g., 'fal')
-        source_url: URL for the API source
-        **kwargs: Additional arguments for extractor
         
     Returns:
-        Extractor instance
+        Extractor class (not instance)
         
     Raises:
         ValueError: If extractor not found
@@ -47,7 +45,7 @@ def get_extractor(extractor_name: str, source_url: str, **kwargs):
             f"Available extractors: {available}"
         )
     
-    return extractor_class(source_url)
+    return extractor_class
 
 
 def list_extractors(include_aliases=False):

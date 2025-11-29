@@ -2,12 +2,41 @@
 
 {% block content %}
 <div class="card">
-    <h2>AI Models</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2>AI Models</h2>
+        <button class="btn btn-danger" onclick="showDeleteAllDialog()" style="background: #dc2626;">
+            🗑️ Delete All Models
+        </button>
+    </div>
+    
+    <!-- Missing Data Statistics -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div style="padding: 1rem; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.5rem;">Total Models</div>
+            <div style="font-size: 2rem; font-weight: bold; color: #111827;">{{ stats.total }}</div>
+        </div>
+        <div style="padding: 1rem; background: #fef3c7; border-radius: 8px; border: 1px solid #fde68a; cursor: pointer;" onclick="filterMissingData('cost')">
+            <div style="font-size: 0.875rem; color: #92400e; margin-bottom: 0.5rem;">Missing Cost</div>
+            <div style="font-size: 2rem; font-weight: bold; color: #92400e;">{{ stats.missing_cost }}</div>
+        </div>
+        <div style="padding: 1rem; background: #dbeafe; border-radius: 8px; border: 1px solid #93c5fd; cursor: pointer;" onclick="filterMissingData('llm')">
+            <div style="font-size: 0.875rem; color: #1e40af; margin-bottom: 0.5rem;">Missing LLM Data</div>
+            <div style="font-size: 2rem; font-weight: bold; color: #1e40af;">{{ stats.missing_llm }}</div>
+        </div>
+        <div style="padding: 1rem; background: #e0e7ff; border-radius: 8px; border: 1px solid #c7d2fe; cursor: pointer;" onclick="filterMissingData('schema')">
+            <div style="font-size: 0.875rem; color: #3730a3; margin-bottom: 0.5rem;">Missing Schema</div>
+            <div style="font-size: 2rem; font-weight: bold; color: #3730a3;">{{ stats.missing_schema }}</div>
+        </div>
+        <div style="padding: 1rem; background: #fce7f3; border-radius: 8px; border: 1px solid #fbcfe8; cursor: pointer;" onclick="filterMissingData('raw')">
+            <div style="font-size: 0.875rem; color: #831843; margin-bottom: 0.5rem;">Missing Raw Data</div>
+            <div style="font-size: 2rem; font-weight: bold; color: #831843;">{{ stats.missing_raw }}</div>
+        </div>
+    </div>
     
     <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-        <form method="GET" style="display: flex; gap: 1rem; flex: 1;">
-            <input type="text" name="search" placeholder="Search models..." value="{{ search }}" style="flex: 1;">
-            <select name="source_id" style="flex: 0 0 200px;">
+        <form method="GET" id="filterForm" style="display: flex; gap: 1rem; flex: 1; flex-wrap: wrap;">
+            <input type="text" name="search" placeholder="Search models..." value="{{ search }}" style="flex: 1; min-width: 200px;">
+            <select name="source_id" id="sourceFilter" style="flex: 0 0 200px;">
                 <option value="">All Sources</option>
                 {% for source in sources %}
                     <option value="{{ source.id }}" {% if current_source == source.id %}selected{% endif %}>
@@ -23,9 +52,91 @@
                     </option>
                 {% endfor %}
             </select>
+            <select name="category" style="flex: 0 0 200px;">
+                <option value="">All Categories</option>
+                {% for cat in categories %}
+                    <option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>
+                        {{ cat }}
+                    </option>
+                {% endfor %}
+            </select>
+            <div style="position: relative; flex: 0 0 200px;">
+                <select id="tagsSelect" multiple style="height: 38px; overflow: hidden; cursor: pointer;" onchange="updateTagsDisplay()" title="Hold Ctrl/Cmd to select multiple tags">
+                    {% for tag in all_tags %}
+                        <option value="{{ tag }}" {% if tag in current_tags %}selected{% endif %}>
+                            {{ tag }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <div style="position: absolute; top: 0; left: 0; right: 0; height: 38px; background: white; border: 1px solid #d1d5db; border-radius: 4px; padding: 0.5rem; pointer-events: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.875rem; display: flex; align-items: center; justify-content: space-between;">
+                    <span id="tagsDisplay" style="color: #6b7280;">All Tags</span>
+                    <span style="color: #9ca3af; font-size: 0.75rem;">▼</span>
+                </div>
+            </div>
+            <!-- Hidden inputs for tags multi-select -->
+            <div id="tagsHiddenInputs"></div>
+            <select name="missing_data" id="missingDataFilter" style="flex: 0 0 200px;">
+                <option value="">All Models</option>
+                <option value="cost" {% if missing_data == 'cost' %}selected{% endif %}>Missing Cost</option>
+                <option value="llm" {% if missing_data == 'llm' %}selected{% endif %}>Missing LLM Data</option>
+                <option value="schema" {% if missing_data == 'schema' %}selected{% endif %}>Missing Schema</option>
+                <option value="raw" {% if missing_data == 'raw' %}selected{% endif %}>Missing Raw Data</option>
+            </select>
             <button type="submit" class="btn">Filter</button>
         </form>
+        {% if search or current_source or current_type or missing_data %}
+        <button type="button" class="btn" style="background: #f59e0b;" onclick="refetchFiltered()">
+            🔄 Re-fetch Filtered
+        </button>
+        {% endif %}
+        {% if missing_data %}
+        <button type="button" class="btn" style="background: #059669;" onclick="reExtractMissing()">
+            🔄 Re-extract Missing
+        </button>
+        {% endif %}
     </div>
+    
+    {% if search or current_source or current_type or current_category or current_tags or missing_data %}
+    <div style="padding: 0.75rem 1rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; margin-bottom: 1rem;">
+        <strong>Active filters:</strong>
+        {% if search %}
+            <span class="badge" style="background: #3b82f6; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem; margin-left: 0.5rem;">
+                Search: "{{ search }}"
+            </span>
+        {% endif %}
+        {% if current_type %}
+            <span class="badge" style="background: #8b5cf6; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem; margin-left: 0.5rem;">
+                Type: {{ current_type }}
+            </span>
+        {% endif %}
+        {% if current_category %}
+            <span class="badge" style="background: #ec4899; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem; margin-left: 0.5rem;">
+                Category: {{ current_category }}
+            </span>
+        {% endif %}
+        {% for tag in current_tags %}
+            <span class="badge" style="background: #06b6d4; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem; margin-left: 0.5rem;">
+                Tag: {{ tag }}
+            </span>
+        {% endfor %}
+        {% if missing_data %}
+            <span class="badge" style="background: #f59e0b; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem; margin-left: 0.5rem;">
+                Missing {{ missing_data|upper }}
+            </span>
+        {% endif %}
+        <a href="/models" style="margin-left: 1rem; color: #2563eb;">Clear all filters</a>
+    </div>
+    {% endif %}
+    
+    {% if missing_data %}
+    <div style="padding: 0.75rem 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; margin-bottom: 1rem;">
+        <strong>Filtered by:</strong> 
+        <span class="badge" style="background: #f59e0b; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem;">
+            Missing {{ missing_data|upper }}
+        </span>
+        <a href="/models" style="margin-left: 1rem; color: #2563eb;">Clear filter</a>
+    </div>
+    {% endif %}
     
     {% if models %}
         <p style="color: #6b7280; margin-bottom: 1rem;">Showing {{ models|length }} models</p>
@@ -36,6 +147,7 @@
                     <th>Type</th>
                     <th>Cost per Call</th>
                     <th>Credits</th>
+                    <th>Data Status</th>
                     <th>Source</th>
                     <th>Actions</th>
                 </tr>
@@ -46,15 +158,41 @@
                     <td>
                         <strong>{{ model.name }}</strong>
                         {% if model.description %}
-                            <br><small style="color: #6b7280;">{{ model.description[:80] }}...</small>
+                            <br><small style="color: #6b7280;">{{ model.description[:80] }}{% if model.description|length > 80 %}...{% endif %}</small>
                         {% endif %}
                     </td>
                     <td><span class="badge badge-blue">{{ model.model_type }}</span></td>
-                    <td><strong>${{ "%.4f"|format(model.cost_per_call) }}</strong></td>
+                    <td>
+                        {% if model.cost_per_call and model.cost_per_call > 0 %}
+                            <strong>${{ "%.4f"|format(model.cost_per_call) }}</strong>
+                        {% else %}
+                            <span style="color: #dc2626;">Missing</span>
+                        {% endif %}
+                    </td>
                     <td>{{ model.credits_required if model.credits_required else '-' }}</td>
+                    <td>
+                        <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                            {% if model.llm_extracted %}
+                                <span class="badge" style="background: #059669;">LLM</span>
+                            {% endif %}
+                            {% if model.input_schema or model.output_schema %}
+                                <span class="badge" style="background: #2563eb;">Schema</span>
+                            {% endif %}
+                            {% if model.raw_metadata %}
+                                <span class="badge" style="background: #7c3aed;">Raw</span>
+                            {% endif %}
+                            {% if not model.llm_extracted and not (model.input_schema or model.output_schema) and not model.raw_metadata %}
+                                <span style="color: #dc2626; font-size: 0.875rem;">No data</span>
+                            {% endif %}
+                        </div>
+                    </td>
                     <td>{{ model.source.name }}</td>
                     <td>
                         <a href="/models/{{ model.id }}" class="btn btn-small">View</a>
+                        <button class="btn btn-small" style="background: #f59e0b;" onclick="refetchSingleModel({{ model.id }}, event)">🔄</button>
+                        <form method="POST" action="/models/{{ model.id }}/delete" style="display: inline;" onsubmit="return confirm('Delete model \"{{ model.name }}\"?');">
+                            <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                        </form>
                     </td>
                 </tr>
                 {% endfor %}
@@ -67,4 +205,265 @@
         </div>
     {% endif %}
 </div>
+
+<!-- Re-extraction Progress Modal -->
+<div id="reExtractModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 500px; width: 90%;">
+        <h3 style="margin: 0 0 1rem 0;">Re-extracting Missing Data</h3>
+        <div id="reExtractProgress" style="margin-bottom: 1rem;">
+            <div style="font-size: 2rem; font-weight: bold; text-align: center; margin-bottom: 0.5rem;">
+                <span id="reExtractProcessed">0</span> / <span id="reExtractTotal">0</span>
+            </div>
+            <div style="background: #e5e7eb; height: 24px; border-radius: 12px; overflow: hidden;">
+                <div id="reExtractBar" style="background: linear-gradient(90deg, #3b82f6, #2563eb); height: 100%; width: 0%; transition: width 0.3s;"></div>
+            </div>
+            <div style="text-align: center; margin-top: 0.5rem; color: #6b7280; font-size: 0.875rem;">
+                <span id="reExtractStatus">Preparing...</span>
+            </div>
+        </div>
+        <div id="reExtractResults" style="display: none;">
+            <div style="padding: 1rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; margin-bottom: 1rem;">
+                <strong style="color: #059669;">✓ Re-extraction Complete</strong>
+                <div style="margin-top: 0.5rem; color: #065f46;">
+                    Updated <span id="reExtractUpdated">0</span> models
+                </div>
+            </div>
+            <button onclick="closeReExtractModal()" class="btn" style="width: 100%;">Close</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Initialize tags display on page load
+document.addEventListener('DOMContentLoaded', function() {
+    updateTagsDisplay();
+});
+
+function updateTagsDisplay() {
+    const select = document.getElementById('tagsSelect');
+    const display = document.getElementById('tagsDisplay');
+    const hiddenContainer = document.getElementById('tagsHiddenInputs');
+    const selected = Array.from(select.selectedOptions).map(opt => opt.value);
+    
+    // Update display text
+    if (selected.length === 0) {
+        display.textContent = 'All Tags';
+        display.style.color = '#6b7280';
+    } else if (selected.length === 1) {
+        display.textContent = selected[0];
+        display.style.color = '#111827';
+    } else {
+        display.textContent = `${selected.length} tags selected`;
+        display.style.color = '#111827';
+    }
+    
+    // Update hidden inputs for form submission
+    hiddenContainer.innerHTML = '';
+    selected.forEach(tag => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'tags';
+        input.value = tag;
+        hiddenContainer.appendChild(input);
+    });
+}
+
+function filterMissingData(type) {
+    const form = document.getElementById('filterForm');
+    const missingDataSelect = document.getElementById('missingDataFilter');
+    missingDataSelect.value = type;
+    form.submit();
+}
+
+function showDeleteAllDialog() {
+    const sourceFilter = document.getElementById('sourceFilter');
+    const sourceId = sourceFilter.value;
+    const sourceName = sourceFilter.options[sourceFilter.selectedIndex].text;
+    
+    if (!sourceId) {
+        alert('Please select a source first to delete all models from that source.');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to delete ALL models from ${sourceName}?\n\nThis action cannot be undone!`)) {
+        return;
+    }
+    
+    fetch(`/sources/${sourceId}/models/delete-all`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function reExtractMissing() {
+    const sourceFilter = document.getElementById('sourceFilter');
+    const sourceId = sourceFilter.value;
+    const missingType = document.getElementById('missingDataFilter').value;
+    
+    if (!sourceId) {
+        alert('Please select a source first.');
+        return;
+    }
+    
+    if (!missingType) {
+        alert('Please select a missing data type filter first.');
+        return;
+    }
+    
+    const modal = document.getElementById('reExtractModal');
+    modal.style.display = 'flex';
+    document.getElementById('reExtractResults').style.display = 'none';
+    document.getElementById('reExtractProgress').style.display = 'block';
+    
+    fetch(`/sources/${sourceId}/re-extract?missing_type=${missingType}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Start polling for progress
+            pollReExtractProgress(sourceId);
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+            closeReExtractModal();
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+        closeReExtractModal();
+    });
+}
+
+function pollReExtractProgress(sourceId) {
+    const interval = setInterval(() => {
+        fetch(`/api/re-extract-progress/${sourceId}`)
+            .then(response => response.json())
+            .then(data => {
+                updateReExtractProgress(data);
+                
+                if (data.status === 'completed' || data.status === 'error') {
+                    clearInterval(interval);
+                    showReExtractResults(data);
+                }
+            })
+            .catch(error => {
+                console.error('Error polling progress:', error);
+                clearInterval(interval);
+            });
+    }, 1000);
+}
+
+function updateReExtractProgress(data) {
+    document.getElementById('reExtractProcessed').textContent = data.processed || 0;
+    document.getElementById('reExtractTotal').textContent = data.total || 0;
+    
+    const percent = data.total > 0 ? Math.round((data.processed / data.total) * 100) : 0;
+    document.getElementById('reExtractBar').style.width = percent + '%';
+    
+    if (data.current_model) {
+        document.getElementById('reExtractStatus').textContent = `Processing: ${data.current_model}`;
+    }
+}
+
+function showReExtractResults(data) {
+    document.getElementById('reExtractProgress').style.display = 'none';
+    document.getElementById('reExtractResults').style.display = 'block';
+    document.getElementById('reExtractUpdated').textContent = data.updated || 0;
+}
+
+function closeReExtractModal() {
+    document.getElementById('reExtractModal').style.display = 'none';
+    location.reload();
+}
+
+function refetchSingleModel(modelId, event) {
+    event.preventDefault();
+    
+    if (!confirm('Re-fetch data for this model?')) {
+        return;
+    }
+    
+    fetch(`/models/${modelId}/refetch`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ Model re-fetched successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function refetchFiltered() {
+    const searchInput = document.querySelector('input[name="search"]');
+    const sourceSelect = document.querySelector('select[name="source_id"]');
+    const typeSelect = document.querySelector('select[name="type"]');
+    const missingDataSelect = document.querySelector('select[name="missing_data"]');
+    
+    const filters = {};
+    if (searchInput && searchInput.value) filters.search = searchInput.value;
+    if (sourceSelect && sourceSelect.value) filters.source_id = sourceSelect.value;
+    if (typeSelect && typeSelect.value) filters.type = typeSelect.value;
+    if (missingDataSelect && missingDataSelect.value) filters.missing_data = missingDataSelect.value;
+    
+    if (Object.keys(filters).length === 0) {
+        alert('Please apply some filters first.');
+        return;
+    }
+    
+    if (!confirm(`Re-fetch data for all filtered models? This may take a while.`)) {
+        return;
+    }
+    
+    const queryString = new URLSearchParams(filters).toString();
+    
+    fetch(`/models/refetch-filtered?${queryString}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✓ Re-fetched ${data.count} models successfully!`);
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+</script>
 {% endblock %}

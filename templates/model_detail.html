@@ -6,9 +6,14 @@
     
     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
         <h2 style="margin: 0;">{{ model.name }}</h2>
-        <button id="extractPricingBtn" class="btn" onclick="extractModelPricing({{ model.id }})" style="background: #10b981;">
-            🤖 Extract Pricing with AI
-        </button>
+        <div style="display: flex; gap: 0.5rem;">
+            <button id="refetchBtn" class="btn" onclick="refetchModel({{ model.id }})" style="background: #f59e0b;">
+                🔄 Re-fetch Data
+            </button>
+            <button id="extractPricingBtn" class="btn" onclick="extractModelPricing({{ model.id }})" style="background: #10b981;">
+                🤖 Extract Pricing with AI
+            </button>
+        </div>
     </div>
     
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 2rem 0;">
@@ -100,6 +105,14 @@
             <p style="color: #15803d; font-size: 0.9rem;">{{ model.llm_extracted.notes }}</p>
         </div>
         {% endif %}
+        
+        <!-- Raw LLM Data Toggle -->
+        {% if model.llm_extracted %}
+        <details style="margin-top: 1rem;">
+            <summary style="cursor: pointer; font-weight: 600; color: #166534;">🔍 View Raw LLM Response (JSON)</summary>
+            <pre style="background: #1f2937; color: #f3f4f6; padding: 1rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; margin-top: 0.5rem;">{{ model.llm_extracted | tojson(indent=2) }}</pre>
+        </details>
+        {% endif %}
     </div>
     {% endif %}
     
@@ -148,6 +161,41 @@
 </div>
 
 <script>
+function refetchModel(modelId) {
+    const btn = document.getElementById('refetchBtn');
+    const originalText = btn.innerHTML;
+    
+    if (!confirm('Re-fetch all data for this model? This will update raw data, schema, and LLM extraction.')) {
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Re-fetching...';
+    
+    fetch(`/models/${modelId}/refetch`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ Model data re-fetched successfully! The page will reload.');
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
 function extractModelPricing(modelId) {
     const btn = document.getElementById('extractPricingBtn');
     const originalText = btn.innerHTML;

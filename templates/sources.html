@@ -84,6 +84,7 @@
     </p>
     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
         <span class="badge badge-blue">fal / falai / fal.ai</span>
+        <span class="badge badge-green">together / togetherai / together.ai</span>
     </div>
     <p style="margin-top: 1rem; color: #6b7280; font-size: 0.9rem;">
         💡 Add more extractors by creating new files in the <code>extractors/</code> directory.
@@ -94,6 +95,7 @@
 {% block extra_scripts %}
 <script>
 let extractSourceId = null;
+let progressPollInterval = null;
 
 function showExtractDialog(sourceId, sourceName) {
     console.log('showExtractDialog called with:', sourceId, sourceName);
@@ -140,8 +142,6 @@ function showExtractDialog(sourceId, sourceName) {
                 Fetch fresh data from APIs, ignoring cached results
             </small>
         </div>
-            </small>
-        </div>
         
         <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
             <button class="btn" style="background: #6b7280;" onclick="closeExtractDialog()">Cancel</button>
@@ -167,14 +167,163 @@ function closeExtractDialog() {
     extractSourceId = null;
 }
 
+function showProgressDialog(sourceId, sourceName) {
+    const modal = document.createElement('div');
+    modal.id = 'progressModal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1001;';
+    
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = 'background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%;';
+    
+    modalContent.innerHTML = `
+        <h3 style="margin: 0 0 1rem 0;">Extracting from ${sourceName}</h3>
+        
+        <div style="margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span id="progressStatus" style="color: #6b7280;">Initializing...</span>
+                <span id="progressPercent" style="font-weight: bold;">0%</span>
+            </div>
+            <div style="background: #e5e7eb; border-radius: 4px; height: 24px; overflow: hidden;">
+                <div id="progressBar" style="background: linear-gradient(90deg, #3b82f6, #2563eb); height: 100%; width: 0%; transition: width 0.3s;"></div>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+            <div style="background: #f9fafb; padding: 0.75rem; border-radius: 4px;">
+                <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.25rem;">Processed</div>
+                <div style="font-size: 1.5rem; font-weight: bold;" id="processedCount">0</div>
+            </div>
+            <div style="background: #f9fafb; padding: 0.75rem; border-radius: 4px;">
+                <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.25rem;">Total Models</div>
+                <div style="font-size: 1.5rem; font-weight: bold;" id="totalCount">0</div>
+            </div>
+            <div style="background: #ecfdf5; padding: 0.75rem; border-radius: 4px;">
+                <div style="font-size: 0.75rem; color: #059669; margin-bottom: 0.25rem;">New Models</div>
+                <div style="font-size: 1.25rem; font-weight: bold; color: #059669;" id="newCount">0</div>
+            </div>
+            <div style="background: #eff6ff; padding: 0.75rem; border-radius: 4px;">
+                <div style="font-size: 0.75rem; color: #2563eb; margin-bottom: 0.25rem;">Updated Models</div>
+                <div style="font-size: 1.25rem; font-weight: bold; color: #2563eb;" id="updatedCount">0</div>
+            </div>
+            <div style="background: #fef3c7; padding: 0.75rem; border-radius: 4px;">
+                <div style="font-size: 0.75rem; color: #d97706; margin-bottom: 0.25rem;">📦 Cached</div>
+                <div style="font-size: 1.25rem; font-weight: bold; color: #d97706;" id="cachedCount">0</div>
+            </div>
+            <div style="background: #fee2e2; padding: 0.75rem; border-radius: 4px;">
+                <div style="font-size: 0.75rem; color: #dc2626; margin-bottom: 0.25rem;">⚠️ Errors</div>
+                <div style="font-size: 1.25rem; font-weight: bold; color: #dc2626;" id="errorCount">0</div>
+            </div>
+        </div>
+        
+        <div style="background: #f9fafb; padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem;">
+            <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.25rem;">Current Model</div>
+            <div style="font-size: 0.9rem; font-family: monospace;" id="currentModel">-</div>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem;">
+            <span id="speedInfo">-</span>
+            <span id="timeInfo">-</span>
+        </div>
+        
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+            <button class="btn" style="background: #6b7280; display: none;" id="closeProgressBtn" onclick="closeProgressDialog()">Close</button>
+        </div>
+    `;
+    
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Start polling for progress
+    startProgressPolling(sourceId);
+}
+
+function closeProgressDialog() {
+    if (progressPollInterval) {
+        clearInterval(progressPollInterval);
+        progressPollInterval = null;
+    }
+    
+    const modal = document.getElementById('progressModal');
+    if (modal) modal.remove();
+}
+
+function startProgressPolling(sourceId) {
+    progressPollInterval = setInterval(() => {
+        fetch(`/api/extraction-progress/${sourceId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    return;
+                }
+                
+                updateProgressUI(data);
+                
+                if (data.status === 'complete' || data.status === 'error') {
+                    clearInterval(progressPollInterval);
+                    progressPollInterval = null;
+                    
+                    document.getElementById('closeProgressBtn').style.display = 'block';
+                    
+                    if (data.status === 'complete') {
+                        document.getElementById('progressStatus').textContent = '✅ Complete!';
+                        document.getElementById('progressStatus').style.color = '#059669';
+                        
+                        setTimeout(() => {
+                            closeProgressDialog();
+                            location.reload();
+                        }, 2000);
+                    } else {
+                        document.getElementById('progressStatus').textContent = '❌ Error';
+                        document.getElementById('progressStatus').style.color = '#dc2626';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Progress polling error:', error);
+            });
+    }, 500);  // Poll every 500ms
+}
+
+function updateProgressUI(data) {
+    const percent = data.total_models > 0 ? Math.round((data.processed_models / data.total_models) * 100) : 0;
+    
+    document.getElementById('progressBar').style.width = percent + '%';
+    document.getElementById('progressPercent').textContent = percent + '%';
+    document.getElementById('processedCount').textContent = data.processed_models;
+    document.getElementById('totalCount').textContent = data.total_models;
+    document.getElementById('newCount').textContent = data.new_models || 0;
+    document.getElementById('updatedCount').textContent = data.updated_models || 0;
+    document.getElementById('cachedCount').textContent = data.cached_count || 0;
+    document.getElementById('errorCount').textContent = data.error_count || 0;
+    
+    if (data.current_model_name) {
+        document.getElementById('currentModel').textContent = data.current_model_name;
+        document.getElementById('progressStatus').textContent = `Processing: ${data.current_model_name.substring(0, 40)}...`;
+    }
+    
+    if (data.models_per_second > 0) {
+        document.getElementById('speedInfo').textContent = `⚡ ${data.models_per_second.toFixed(2)} models/sec`;
+    }
+    
+    if (data.elapsed_seconds > 0) {
+        const elapsed = Math.round(data.elapsed_seconds);
+        const remaining = Math.round(data.estimated_remaining_seconds || 0);
+        document.getElementById('timeInfo').textContent = `⏱️ ${elapsed}s elapsed, ~${remaining}s remaining`;
+    }
+}
+
 function extractWithOptions() {
     console.log('extractWithOptions called');
     const useLlm = document.getElementById('useLlmCheck').checked;
     const fetchSchemas = document.getElementById('fetchSchemasCheck').checked;
     const forceRefresh = document.getElementById('forceRefreshCheck').checked;
-    const sourceId = extractSourceId; // Store it before closing dialog
+    const sourceId = extractSourceId;
     
-    console.log('Options:', { useLlm, fetchSchemas, forceRefresh, sourceId });
+    // Get source name from the modal title
+    const modalTitle = document.querySelector('#extractModal h3');
+    const sourceName = modalTitle ? modalTitle.textContent.replace('Extract Models from ', '') : 'Source';
+    
+    console.log('Options:', { useLlm, fetchSchemas, forceRefresh, sourceId, sourceName });
     
     closeExtractDialog();
     
@@ -183,12 +332,8 @@ function extractWithOptions() {
         return;
     }
     
-    // Show progress
-    const progressDiv = document.createElement('div');
-    progressDiv.id = 'extractProgress';
-    progressDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 1001;';
-    progressDiv.innerHTML = '<strong>Extracting...</strong><br><small>This may take a while</small>';
-    document.body.appendChild(progressDiv);
+    // Show progress dialog
+    showProgressDialog(sourceId, sourceName);
     
     console.log('Fetching:', `/sources/${sourceId}/extract`);
     
@@ -209,18 +354,15 @@ function extractWithOptions() {
     })
     .then(data => {
         console.log('Response data:', data);
-        progressDiv.remove();
-        if (data.success) {
-            alert(`Success! Extracted ${data.total} models (${data.new} new, ${data.updated} updated)`);
-            location.reload();
-        } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
+        if (!data.success && data.error) {
+            alert('Error: ' + data.error);
+            closeProgressDialog();
         }
     })
     .catch(error => {
         console.error('Fetch error:', error);
-        progressDiv.remove();
         alert('Error: ' + error);
+        closeProgressDialog();
     });
 }
 
