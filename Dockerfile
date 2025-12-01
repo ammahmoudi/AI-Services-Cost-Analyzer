@@ -16,6 +16,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install gunicorn for production
+RUN pip install gunicorn
+
 # Install Playwright and Chromium
 RUN playwright install chromium && \
     playwright install-deps chromium
@@ -33,5 +36,8 @@ EXPOSE 5000
 ENV FLASK_APP=app.py
 ENV PYTHONUNBUFFERED=1
 
-# Initialize database and run application
-CMD ["sh", "-c", "python -c 'from ai_cost_manager.database import init_db; init_db()' && python app.py"]
+# Make entrypoint executable
+RUN chmod +x /app/entrypoint.py
+
+# Run migrations and start application
+CMD ["python", "entrypoint.py"]
