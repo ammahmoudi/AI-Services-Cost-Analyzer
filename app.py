@@ -222,33 +222,57 @@ def extract_source(source_id):
                 'success': False
             }), 400
         
-        # Save models
+        # Save models incrementally with batching for better resilience
         new_count = 0
         updated_count = 0
+        batch_size = 10  # Commit every 10 models to prevent data loss
+        batch_count = 0
         
         for model_data in models_data:
-            # Remove keys that aren't columns in the model
-            filtered_data = {
-                k: v for k, v in model_data.items()
-                if hasattr(AIModel, k)
-            }
-            
-            existing_model = session.query(AIModel).filter_by(
-                source_id=source_db_id,
-                model_id=model_data['model_id']
-            ).first()
-            
-            if existing_model:
-                for key, value in filtered_data.items():
-                    if key != 'id':  # Don't update the primary key
-                        setattr(existing_model, key, value)
-                updated_count += 1
-                progress_tracker.increment_updated()
-            else:
-                model = AIModel(source_id=source_db_id, **filtered_data)
-                session.add(model)
-                new_count += 1
-                progress_tracker.increment_new()
+            try:
+                # Remove keys that aren't columns in the model
+                filtered_data = {
+                    k: v for k, v in model_data.items()
+                    if hasattr(AIModel, k)
+                }
+                
+                existing_model = session.query(AIModel).filter_by(
+                    source_id=source_db_id,
+                    model_id=model_data['model_id']
+                ).first()
+                
+                if existing_model:
+                    for key, value in filtered_data.items():
+                        if key != 'id':  # Don't update the primary key
+                            setattr(existing_model, key, value)
+                    updated_count += 1
+                    progress_tracker.increment_updated()
+                else:
+                    model = AIModel(source_id=source_db_id, **filtered_data)
+                    session.add(model)
+                    new_count += 1
+                    progress_tracker.increment_new()
+                
+                batch_count += 1
+                
+                # Commit in batches to prevent data loss on failure
+                if batch_count >= batch_size:
+                    session.commit()
+                    batch_count = 0
+                    
+            except Exception as model_error:
+                # Log the error but continue with other models
+                error_msg = f"Error saving model {model_data.get('model_id', 'unknown')}: {str(model_error)}"
+                if progress_tracker:
+                    progress_tracker.log(error_msg)
+                print(f"Warning: {error_msg}")
+                session.rollback()
+                batch_count = 0  # Reset batch after rollback
+                continue
+        
+        # Commit any remaining models in the last batch
+        if batch_count > 0:
+            session.commit()
         
         # Re-query source again to update last extracted timestamp
         source = session.query(APISource).filter_by(id=source_db_id).first()
@@ -1090,6 +1114,8 @@ def re_extract_missing(source_id):
                 )
                 
                 updated_count = 0
+                batch_size = 10  # Commit every 10 models
+                batch_count = 0
                 
                 for model in models_to_update:
                     try:
@@ -1111,13 +1137,25 @@ def re_extract_missing(source_id):
                         progress_tracker.increment_processed()
                         progress_tracker.save()
                         
+                        batch_count += 1
+                        
+                        # Commit in batches to prevent data loss
+                        if batch_count >= batch_size:
+                            thread_session.commit()
+                            batch_count = 0
+                        
                     except Exception as e:
                         print(f"Error re-extracting {model.name}: {e}")
                         progress_tracker.increment_processed()
                         progress_tracker.save()
+                        thread_session.rollback()
+                        batch_count = 0
                         continue
                 
-                thread_session.commit()
+                # Commit any remaining models
+                if batch_count > 0:
+                    thread_session.commit()
+                    
                 progress_tracker.complete(
                     success=True,
                     message=f'Re-extracted {updated_count} models'
