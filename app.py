@@ -9,6 +9,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 from dotenv import load_dotenv
 from ai_cost_manager.database import get_session, close_session, init_db
 from ai_cost_manager.models import APISource, AIModel, LLMConfiguration, AuthSettings, ExtractorAPIKey
+from ai_cost_manager.openrouter_client import fetch_openrouter_models, get_recommended_models
 from extractors import get_extractor, list_extractors
 from datetime import datetime
 
@@ -479,11 +480,17 @@ def settings():
         # Get Runware authentication
         runware_auth = session.query(AuthSettings).filter_by(source_name='runware').first()
         
+        # Fetch available models with free models first
+        available_models = fetch_openrouter_models(sort_by_free=True)
+        recommended = get_recommended_models()
+        
         return render_template('settings.html',
                              llm_config=llm_config,
                              together_key=together_key,
                              fal_auth=fal_auth,
-                             runware_auth=runware_auth)
+                             runware_auth=runware_auth,
+                             available_models=available_models,
+                             recommended_models=recommended)
     finally:
         close_session()
 
