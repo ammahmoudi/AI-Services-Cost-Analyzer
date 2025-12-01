@@ -162,6 +162,13 @@
             padding: 1rem;
             border-radius: 4px;
             margin-bottom: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .flash:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
         }
         
         .flash.success {
@@ -174,6 +181,137 @@
             background: #fee2e2;
             color: #991b1b;
             border: 1px solid #fca5a5;
+        }
+        
+        .flash.error::after {
+            content: ' (click for details)';
+            font-size: 0.85em;
+            opacity: 0.7;
+        }
+        
+        /* Modal styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-overlay.active {
+            display: flex;
+        }
+        
+        .modal {
+            background: white;
+            border-radius: 8px;
+            max-width: 800px;
+            max-height: 80vh;
+            width: 90%;
+            overflow: hidden;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        
+        .modal-header {
+            background: #991b1b;
+            color: white;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.25rem;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+        }
+        
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .modal-body {
+            padding: 1.5rem;
+            max-height: calc(80vh - 140px);
+            overflow-y: auto;
+        }
+        
+        .error-summary {
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: #fee2e2;
+            border-left: 4px solid #991b1b;
+            border-radius: 4px;
+        }
+        
+        .error-details {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .error-details h4 {
+            margin-top: 0;
+            margin-bottom: 0.75rem;
+            font-size: 0.95rem;
+            color: #6b7280;
+        }
+        
+        .error-code {
+            background: #1f2937;
+            color: #f3f4f6;
+            padding: 1rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            background: #f9fafb;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+        }
+        
+        .btn-copy {
+            padding: 0.5rem 1rem;
+            background: #6b7280;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        
+        .btn-copy:hover {
+            background: #4b5563;
         }
         
         .form-group {
@@ -255,13 +393,97 @@
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="flash {{ category }}">{{ message }}</div>
+                    <div class="flash {{ category }}" onclick="{% if category == 'error' %}showErrorModal({{ message|tojson }}){% endif %}">
+                        {{ message if message|length < 150 else (message[:150] + '...') }}
+                    </div>
                 {% endfor %}
             {% endif %}
         {% endwith %}
         
         {% block content %}{% endblock %}
     </div>
+    
+    <!-- Error Modal -->
+    <div class="modal-overlay" id="errorModal" onclick="if(event.target === this) closeErrorModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>❌ Error Details</h3>
+                <button class="modal-close" onclick="closeErrorModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="error-summary">
+                    <strong>Error Message:</strong>
+                    <p id="errorMessage" style="margin-top: 0.5rem;"></p>
+                </div>
+                <div class="error-details">
+                    <h4>Full Error Details:</h4>
+                    <div class="error-code" id="errorCode"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-copy" onclick="copyErrorToClipboard()">📋 Copy Error</button>
+                <button class="btn btn-danger" onclick="closeErrorModal()">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function showErrorModal(errorMessage) {
+            const modal = document.getElementById('errorModal');
+            const messageEl = document.getElementById('errorMessage');
+            const codeEl = document.getElementById('errorCode');
+            
+            // Extract short message and full details
+            let shortMessage = errorMessage;
+            let fullDetails = errorMessage;
+            
+            // Try to parse structured error if it's a dict/object
+            if (typeof errorMessage === 'object') {
+                shortMessage = errorMessage.message || errorMessage.error || JSON.stringify(errorMessage);
+                fullDetails = JSON.stringify(errorMessage, null, 2);
+            } else if (errorMessage.includes('Traceback') || errorMessage.includes('Error:')) {
+                // Python traceback
+                const lines = errorMessage.split('\n');
+                const errorLine = lines.find(line => line.includes('Error:'));
+                shortMessage = errorLine || lines[lines.length - 1] || errorMessage;
+                fullDetails = errorMessage;
+            }
+            
+            messageEl.textContent = shortMessage;
+            codeEl.textContent = fullDetails;
+            modal.classList.add('active');
+            
+            // Store for copy function
+            window.currentError = fullDetails;
+        }
+        
+        function closeErrorModal() {
+            const modal = document.getElementById('errorModal');
+            modal.classList.remove('active');
+        }
+        
+        function copyErrorToClipboard() {
+            const errorText = window.currentError || document.getElementById('errorCode').textContent;
+            navigator.clipboard.writeText(errorText).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy to clipboard');
+            });
+        }
+        
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeErrorModal();
+            }
+        });
+    </script>
     
     {% block extra_scripts %}{% endblock %}
 </body>
