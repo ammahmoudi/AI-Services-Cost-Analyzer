@@ -251,6 +251,50 @@
                 <div class="help-text">Enable fal.ai authentication for accurate pricing</div>
             </div>
             
+            <hr style="margin: 2rem 0; border: none; border-top: 1px solid #e5e7eb;">
+            
+            <!-- Runware Authentication -->
+            <div class="form-group">
+                <label for="runware_username">
+                    <strong>Runware</strong> - Email
+                    {% if runware_auth and runware_auth.is_active %}
+                        <span class="key-status configured">✓ Configured</span>
+                    {% else %}
+                        <span class="key-status missing">Not configured</span>
+                    {% endif %}
+                </label>
+                <input type="email" id="runware_username" name="runware_username" 
+                       value="{{ runware_auth.username if runware_auth else '' }}" 
+                       placeholder="your-email@example.com">
+                <div class="help-text">
+                    Your Runware account email for authentication. Required for extracting 189+ certified models.
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="runware_password">
+                    <strong>Runware</strong> - Password
+                </label>
+                <div class="api-key-input">
+                    <input type="password" id="runware_password" name="runware_password" 
+                           value="{{ runware_auth.password if runware_auth else '' }}" 
+                           placeholder="Your Runware password">
+                    <button type="button" class="toggle-key" onclick="togglePassword('runware_password')">Show</button>
+                </div>
+                <div class="help-text">
+                    Your Runware account password. 
+                    <a href="https://my.runware.ai/login" target="_blank">Create account</a> if you don't have one.
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="runware_active" {{ 'checked' if not runware_auth or runware_auth.is_active else '' }}>
+                    Active
+                </label>
+                <div class="help-text">Enable Runware authentication for extracting certified models</div>
+            </div>
+            
             <button type="submit" class="btn btn-success">Save All Extractor Settings</button>
         </form>
     </div>

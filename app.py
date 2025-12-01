@@ -476,10 +476,14 @@ def settings():
         # Get fal.ai authentication
         fal_auth = session.query(AuthSettings).filter_by(source_name='fal.ai').first()
         
+        # Get Runware authentication
+        runware_auth = session.query(AuthSettings).filter_by(source_name='runware').first()
+        
         return render_template('settings.html',
                              llm_config=llm_config,
                              together_key=together_key,
-                             fal_auth=fal_auth)
+                             fal_auth=fal_auth,
+                             runware_auth=runware_auth)
     finally:
         close_session()
 
@@ -592,6 +596,37 @@ def save_extractor_keys():
             fal_auth = session.query(AuthSettings).filter_by(source_name='fal.ai').first()
             if fal_auth:
                 session.delete(fal_auth)
+        
+        # Handle Runware authentication
+        runware_username = request.form.get('runware_username', '').strip()
+        runware_password = request.form.get('runware_password', '').strip()
+        runware_active = 'runware_active' in request.form
+        
+        if runware_username and runware_password:
+            # Get or create Runware auth
+            runware_auth = session.query(AuthSettings).filter_by(source_name='runware').first()
+            
+            if runware_auth:
+                runware_auth.username = runware_username
+                runware_auth.password = runware_password
+                runware_auth.is_active = runware_active
+                runware_auth.updated_at = datetime.utcnow()
+            else:
+                runware_auth = AuthSettings(
+                    source_name='runware',
+                    username=runware_username,
+                    password=runware_password,
+                    is_active=runware_active
+                )
+                session.add(runware_auth)
+        elif runware_username or runware_password:
+            # Partial credentials - show warning
+            flash('Both Runware email and password are required', 'warning')
+        else:
+            # Delete if both empty
+            runware_auth = session.query(AuthSettings).filter_by(source_name='runware').first()
+            if runware_auth:
+                session.delete(runware_auth)
         
         session.commit()
         flash('Extractor settings saved successfully!', 'success')
