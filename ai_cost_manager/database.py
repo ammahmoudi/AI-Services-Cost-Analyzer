@@ -45,10 +45,12 @@ Session = scoped_session(session_factory)
 
 def init_db():
     """Initialize the database - create all tables and seed default data"""
-    Base.metadata.create_all(engine)
+    # Only create tables, never drop them
+    # This is safe to run multiple times - it won't affect existing data
+    Base.metadata.create_all(engine, checkfirst=True)
     print("Database initialized successfully!")
     
-    # Seed default sources
+    # Seed default sources only if the table is empty
     _seed_default_sources()
 
 
