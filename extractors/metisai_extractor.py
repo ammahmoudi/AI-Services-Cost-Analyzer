@@ -258,7 +258,7 @@ class MetisAIExtractor(BaseExtractor):
                 cache_used['llm'] = True
             else:
                 # Perform LLM extraction with retry logic
-                from extractors.together_utils.llm_extractor import extract_pricing_with_llm
+                from ai_cost_manager.llm_extractor import extract_pricing_with_llm
                 
                 llm_context = {
                     'provider': provider,
