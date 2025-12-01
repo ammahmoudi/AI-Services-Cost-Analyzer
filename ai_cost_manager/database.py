@@ -81,6 +81,12 @@ def _seed_default_sources():
             'extractor_name': 'metisai',
             'is_active': True
         },
+        {
+            'name': 'Runware',
+            'url': 'https://runware.ai/pricing',
+            'extractor_name': 'runware',
+            'is_active': True
+        },
     ]
     
     session = get_session()

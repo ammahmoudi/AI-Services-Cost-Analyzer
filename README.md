@@ -8,6 +8,8 @@ A comprehensive tool for tracking, analyzing, and comparing pricing across multi
   - fal.ai (with authenticated playground pricing)
   - Together AI
   - AvalAI (Iranian AI aggregator with transparent pricing)
+  - MetisAI (comprehensive Iranian AI platform)
+  - Runware (multi-provider image/video generation API)
   - More sources coming soon
 
 - **Intelligent LLM-Based Extraction**: Uses OpenRouter LLMs to intelligently parse and extract pricing data from various formats (HTML, JSON, Markdown)
@@ -229,6 +231,13 @@ The system automatically seeds four default sources on first initialization:
    - Iranian AI aggregator with comprehensive pricing API
    - Supports OpenAI, Google, Anthropic, Cohere, Meta, Mistral, DeepSeek, Grok, and more
    - Includes LLM, embedding, image generation, video, audio, and search models
+
+5. **Runware** (`extractor: runware`)
+   - URL: https://runware.ai/pricing
+   - Multi-provider image and video generation API via WebSocket
+   - Supports FLUX, Midjourney, Stable Diffusion, Sora, Kling, Google Veo, and 40+ more models
+   - Includes background removal, upscaling, and video processing tools
+   - Pricing for image generation (per image), video generation (per video/second), and tools
 
 ## Development
 

@@ -7,6 +7,7 @@ from extractors.fal_extractor import FalAIExtractor
 from extractors.together_extractor import TogetherAIExtractor
 from extractors.avalai_extractor import AvalAIExtractor
 from extractors.metisai_extractor import MetisAIExtractor
+from extractors.runware_extractor import RunwareExtractor
 
 # Registry of available extractors (with aliases)
 EXTRACTORS = {
@@ -22,6 +23,8 @@ EXTRACTORS = {
     'metisai': MetisAIExtractor,
     'metis': MetisAIExtractor,  # Alias
     'metis.ai': MetisAIExtractor,  # Alias
+    'runware': RunwareExtractor,
+    'runware.ai': RunwareExtractor,  # Alias
 }
 
 # Primary extractor names (for display)
@@ -30,6 +33,7 @@ PRIMARY_EXTRACTORS = {
     'together': 'Together AI (aliases: togetherai, together.ai)',
     'avalai': 'AvalAI (aliases: aval, aval.ai)',
     'metisai': 'MetisAI (aliases: metis, metis.ai)',
+    'runware': 'Runware (aliases: runware.ai)',
 }
 
 # Extractor feature support matrix
@@ -50,6 +54,11 @@ EXTRACTOR_FEATURES = {
         'supports_playground': False,
     },
     'metisai': {
+        'supports_schemas': False,
+        'supports_llm': True,
+        'supports_playground': False,
+    },
+    'runware': {
         'supports_schemas': False,
         'supports_llm': True,
         'supports_playground': False,
