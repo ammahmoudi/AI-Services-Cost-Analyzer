@@ -98,18 +98,39 @@ class RunwareExtractor:
                 is_active=True
             ).first()
             
-            if auth and hasattr(auth, 'cookies') and auth.cookies:
-                cookies_str = str(auth.cookies)  # Ensure it's a string
-                print("Found Runware authentication, attempting authenticated extraction...")
-                all_models = self._extract_with_auth(cookies_str, progress_tracker)
-                
-                if all_models:
-                    print(f"✅ Successfully extracted {len(all_models)} models via authenticated method")
-                    return all_models
+            if auth:
+                # Check for username/password auth
+                if hasattr(auth, 'username') and hasattr(auth, 'password'):
+                    username_str = str(auth.username) if auth.username is not None else None
+                    password_str = str(auth.password) if auth.password is not None else None
+                    
+                    if username_str and password_str:
+                        print(f"Found Runware credentials (user: {username_str}), attempting authenticated extraction...")
+                        all_models = self._extract_with_auth(
+                            cookies_json=None,
+                            progress_tracker=progress_tracker,
+                            username=username_str,
+                            password=password_str
+                        )
+                        
+                        if all_models:
+                            print(f"✅ Successfully extracted {len(all_models)} models via authenticated method")
+                            return all_models
+                        else:
+                            print("⚠️ Authenticated extraction returned no models")
+                # Legacy cookie-based auth (deprecated)
+                elif hasattr(auth, 'cookies') and auth.cookies is not None:
+                    cookies_str = str(auth.cookies)
+                    print("Found Runware cookies (deprecated), attempting authenticated extraction...")
+                    all_models = self._extract_with_auth(cookies_str, progress_tracker)
+                    
+                    if all_models:
+                        print(f"✅ Successfully extracted {len(all_models)} models via authenticated method")
+                        return all_models
                 else:
-                    print("⚠️ Authenticated extraction returned no models, falling back to public page")
+                    print("Runware auth found but no credentials/cookies configured")
             else:
-                print("No Runware authentication found, using public pricing page")
+                print("No Runware authentication found, using default credentials")
                 
         except Exception as e:
             print(f"Error checking authentication: {e}")
@@ -168,13 +189,16 @@ class RunwareExtractor:
 
         return all_models
 
-    def _extract_with_auth(self, cookies_json: str, progress_tracker: Optional[ProgressTracker] = None) -> List[Dict]:
+    def _extract_with_auth(self, cookies_json: Optional[str] = None, progress_tracker: Optional[ProgressTracker] = None, 
+                          username: Optional[str] = None, password: Optional[str] = None) -> List[Dict]:
         """
         Extract models using authentication via login
         
         Args:
             cookies_json: JSON string of cookies (not used, we'll login directly)
             progress_tracker: Optional progress tracker
+            username: Email for login (if not provided, uses default)
+            password: Password for login (if not provided, uses default)
             
         Returns:
             List of model dictionaries
@@ -190,9 +214,9 @@ class RunwareExtractor:
                 'supports_llm': False
             })
         
-        # Login credentials
-        email = "rzrd2024@gmail.com"
-        password = "REZVANI@rzrd2024"
+        # Login credentials (use provided or fallback to defaults)
+        email = username if username else "rzrd2024@gmail.com"
+        pwd = password if password else "REZVANI@rzrd2024"
         
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
@@ -207,7 +231,7 @@ class RunwareExtractor:
                 time.sleep(2)
                 
                 page.fill('input[type="email"]', email)
-                page.fill('input[type="password"]', password)
+                page.fill('input[type="password"]', pwd)
                 page.click('button[type="submit"]')
                 time.sleep(8)  # Wait for login
                 

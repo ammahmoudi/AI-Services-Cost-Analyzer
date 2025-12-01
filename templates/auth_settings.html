@@ -76,6 +76,59 @@
         </div>
     </div>
 
+    <!-- Add Runware Authentication -->
+    <div class="card mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">
+                <i class="fas fa-plus"></i> Add Runware Authentication
+            </h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('save_auth_settings') }}">
+                <input type="hidden" name="source_name" value="runware">
+                
+                <div class="alert alert-light border">
+                    <strong>Credential-Based:</strong> Runware uses email/password authentication
+                </div>
+
+                <div class="mb-3">
+                    <label for="runware_username" class="form-label">
+                        <strong>Email</strong> <span class="badge bg-danger">Required</span>
+                    </label>
+                    <input type="email" class="form-control" id="runware_username" name="username" 
+                           placeholder="your-email@example.com" required>
+                    <small class="form-text text-muted">Your Runware account email</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="runware_password" class="form-label">
+                        <strong>Password</strong> <span class="badge bg-danger">Required</span>
+                    </label>
+                    <input type="password" class="form-control" id="runware_password" name="password" 
+                           placeholder="Your password" required>
+                    <small class="form-text text-muted">Your Runware account password</small>
+                </div>
+
+                <div class="mb-3">
+                    <label for="runware_notes" class="form-label">Notes <span class="text-muted">(Optional)</span></label>
+                    <input type="text" class="form-control" id="runware_notes" name="notes" 
+                           placeholder="e.g., Production account">
+                </div>
+
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="runware_is_active" name="is_active" checked>
+                    <label class="form-check-label" for="runware_is_active">
+                        <i class="fas fa-check-circle text-success"></i> Active
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-save"></i> Save Authentication
+                </button>
+            </form>
+        </div>
+    </div>
+
     <!-- Existing Auth Configurations -->
     <div class="card">
         <div class="card-header">
@@ -91,7 +144,8 @@
                             <tr>
                                 <th>Source</th>
                                 <th>Status</th>
-                                <th>Has Cookies</th>
+                                <th>Auth Type</th>
+                                <th>Username</th>
                                 <th>Created</th>
                                 <th>Updated</th>
                                 <th>Actions</th>
@@ -118,16 +172,24 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    {% if auth.cookies %}
-                                        <span class="badge bg-success">
-                                            <i class="fas fa-cookie"></i> Yes
+                                    {% if auth.username %}
+                                        <span class="badge bg-info">
+                                            <i class="fas fa-user"></i> Credentials
+                                        </span>
+                                    {% elif auth.cookies %}
+                                        <span class="badge bg-primary">
+                                            <i class="fas fa-cookie"></i> Cookies
                                         </span>
                                     {% else %}
-                                        <span class="badge bg-danger">No</span>
+                                        <span class="badge bg-secondary">None</span>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <span class="text-muted">N/A</span>
+                                    {% if auth.username %}
+                                        <span class="font-monospace">{{ auth.username }}</span>
+                                    {% else %}
+                                        <span class="text-muted">N/A</span>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     <small>{{ auth.created_at.strftime('%Y-%m-%d %H:%M') if auth.created_at else 'N/A' }}</small>

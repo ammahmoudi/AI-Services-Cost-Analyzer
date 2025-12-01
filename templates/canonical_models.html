@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0 0 0.5rem 0;">🔄 Unified Model View</h2>
+            <p style="color: #6b7280; margin: 0;">Compare the same models across different providers</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+            <button onclick="window.location.href='/models'" class="btn" style="background: #6b7280;">
+                📋 By Provider View
+            </button>
+            <button id="runMatchingBtn" onclick="runModelMatching()" class="btn" style="background: #10b981;">
+                🤖 Run Model Matching
+            </button>
+        </div>
+    </div>
+    
+    <!-- Filter Section -->
+    <div style="margin-bottom: 2rem; display: flex; gap: 1rem; align-items: center;">
+        <label for="typeFilter" style="font-weight: 600;">Filter by Type:</label>
+        <select id="typeFilter" onchange="filterByType()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #d1d5db;">
+            <option value="">All Types</option>
+            <option value="image">Image</option>
+            <option value="text">Text (LLM)</option>
+            <option value="video">Video</option>
+            <option value="audio">Audio</option>
+            <option value="other">Other</option>
+        </select>
+        
+        <div style="margin-left: auto;">
+            <span id="modelCount" style="color: #6b7280; font-size: 0.9rem;"></span>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="loading" style="text-align: center; padding: 3rem;">
+        <div style="font-size: 2rem; margin-bottom: 1rem;">⏳</div>
+        <p style="color: #6b7280;">Loading unified models...</p>
+    </div>
+    
+    <!-- Error State -->
+    <div id="error" style="display: none; padding: 1rem; background: #fee2e2; border-radius: 8px; color: #991b1b; margin-bottom: 1rem;"></div>
+    
+    <!-- No Results State -->
+    <div id="noResults" style="display: none; text-align: center; padding: 3rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+        <h3 style="color: #6b7280; margin-bottom: 0.5rem;">No Matched Models Found</h3>
+        <p style="color: #9ca3af; margin-bottom: 1.5rem;">Run model matching to identify equivalent models across providers</p>
+        <button onclick="runModelMatching()" class="btn" style="background: #10b981;">
+            🤖 Run Model Matching Now
+        </button>
+    </div>
+    
+    <!-- Models Grid -->
+    <div id="modelsGrid" style="display: none;"></div>
+</div>
+
+<script>
+let allModels = [];
+
+// Load canonical models on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadCanonicalModels();
+});
+
+function loadCanonicalModels(modelType = '') {
+    const loading = document.getElementById('loading');
+    const error = document.getElementById('error');
+    const noResults = document.getElementById('noResults');
+    const grid = document.getElementById('modelsGrid');
+    
+    loading.style.display = 'block';
+    error.style.display = 'none';
+    noResults.style.display = 'none';
+    grid.style.display = 'none';
+    
+    const url = modelType ? `/api/canonical-models?model_type=${modelType}` : '/api/canonical-models';
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            loading.style.display = 'none';
+            
+            if (data.error) {
+                error.textContent = data.error;
+                error.style.display = 'block';
+                return;
+            }
+            
+            allModels = data.models || [];
+            
+            if (allModels.length === 0) {
+                noResults.style.display = 'block';
+                return;
+            }
+            
+            renderModels(allModels);
+        })
+        .catch(err => {
+            loading.style.display = 'none';
+            error.textContent = 'Failed to load models: ' + err.message;
+            error.style.display = 'block';
+        });
+}
+
+function renderModels(models) {
+    const grid = document.getElementById('modelsGrid');
+    const count = document.getElementById('modelCount');
+    
+    count.textContent = `Showing ${models.length} unique model${models.length !== 1 ? 's' : ''}`;
+    
+    let html = '<div style="display: grid; gap: 1.5rem;">';
+    
+    models.forEach(model => {
+        const bestPrice = model.best_price;
+        const priceDisplay = bestPrice ? `$${bestPrice.cost_per_call.toFixed(6)}` : 'N/A';
+        const priceRange = getPriceRange(model.providers);
+        
+        html += `
+            <div class="card" style="border: 2px solid #e5e7eb; padding: 0; overflow: hidden;">
+                <!-- Header -->
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; color: white;">
+                    <h3 style="margin: 0 0 0.5rem 0; font-size: 1.25rem;">${model.display_name}</h3>
+                    <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.9rem; opacity: 0.95;">
+                        <span>📦 ${model.provider_count} provider${model.provider_count !== 1 ? 's' : ''}</span>
+                        <span class="badge" style="background: rgba(255,255,255,0.2);">${model.model_type || 'unknown'}</span>
+                        ${priceRange ? `<span>💰 ${priceRange}</span>` : ''}
+                    </div>
+                </div>
+                
+                <!-- Content -->
+                <div style="padding: 1.5rem;">
+                    ${model.description ? `<p style="color: #4b5563; margin-bottom: 1.5rem;">${model.description}</p>` : ''}
+                    
+                    <!-- Best Price Highlight -->
+                    ${bestPrice ? `
+                        <div style="background: #d1fae5; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid #10b981;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <p style="color: #065f46; font-size: 0.85rem; margin: 0 0 0.25rem 0;">✓ Best Price</p>
+                                    <p style="color: #047857; font-weight: 600; font-size: 1.1rem; margin: 0;">${bestPrice.provider}</p>
+                                </div>
+                                <div style="text-align: right;">
+                                    <p style="color: #047857; font-size: 1.5rem; font-weight: 700; margin: 0;">${priceDisplay}</p>
+                                    <p style="color: #065f46; font-size: 0.75rem; margin: 0;">per call</p>
+                                </div>
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <!-- All Providers -->
+                    <details ${model.provider_count <= 3 ? 'open' : ''}>
+                        <summary style="cursor: pointer; font-weight: 600; color: #374151; margin-bottom: 1rem;">
+                            All Providers (${model.provider_count})
+                        </summary>
+                        <div style="display: grid; gap: 0.75rem; margin-top: 1rem;">
+                            ${model.providers.map((provider, index) => {
+                                const isBest = bestPrice && provider.model_id === bestPrice.model_id;
+                                const borderColor = isBest ? '#10b981' : '#e5e7eb';
+                                
+                                return `
+                                    <div style="border: 1px solid ${borderColor}; padding: 1rem; border-radius: 6px; background: ${isBest ? '#f0fdf4' : '#ffffff'};">
+                                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                                            <div style="flex: 1;">
+                                                <p style="font-weight: 600; margin: 0 0 0.25rem 0; color: #1f2937;">
+                                                    ${provider.provider}
+                                                    ${isBest ? '<span style="color: #10b981; margin-left: 0.5rem;">✓</span>' : ''}
+                                                </p>
+                                                <p style="color: #6b7280; font-size: 0.85rem; margin: 0;">
+                                                    Confidence: ${(provider.confidence * 100).toFixed(0)}%
+                                                </p>
+                                            </div>
+                                            <div style="text-align: right; margin-right: 1rem;">
+                                                <p style="font-size: 1.25rem; font-weight: 600; color: ${isBest ? '#10b981' : '#2563eb'}; margin: 0;">
+                                                    $${provider.cost_per_call ? provider.cost_per_call.toFixed(6) : 'N/A'}
+                                                </p>
+                                            </div>
+                                            <a href="/models/${provider.model_id}" class="btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">
+                                                View
+                                            </a>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </details>
+                    
+                    <!-- Tags -->
+                    ${model.tags && model.tags.length > 0 ? `
+                        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e5e7eb;">
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                ${model.tags.slice(0, 5).map(tag => `
+                                    <span class="badge badge-gray">${tag}</span>
+                                `).join('')}
+                                ${model.tags.length > 5 ? `<span class="badge badge-gray">+${model.tags.length - 5} more</span>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    
+    grid.innerHTML = html;
+    grid.style.display = 'block';
+}
+
+function getPriceRange(providers) {
+    const prices = providers
+        .map(p => p.cost_per_call)
+        .filter(p => p && p > 0)
+        .sort((a, b) => a - b);
+    
+    if (prices.length === 0) return null;
+    if (prices.length === 1) return `$${prices[0].toFixed(6)}`;
+    
+    const min = prices[0];
+    const max = prices[prices.length - 1];
+    
+    return `$${min.toFixed(6)} - $${max.toFixed(6)}`;
+}
+
+function filterByType() {
+    const select = document.getElementById('typeFilter');
+    const selectedType = select.value;
+    
+    loadCanonicalModels(selectedType);
+}
+
+function runModelMatching() {
+    const btn = document.getElementById('runMatchingBtn');
+    const originalText = btn.innerHTML;
+    
+    if (!confirm('Run model matching across all providers? This will use AI to identify equivalent models.')) {
+        return;
+    }
+    
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Matching...';
+    
+    fetch('/api/match-models', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ force_refresh: false })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+        } else if (data.status === 'already_matched') {
+            if (confirm(`Models are already matched (${data.existing_matches} matches). Re-match anyway?`)) {
+                // Re-run with force refresh
+                return fetch('/api/match-models', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ force_refresh: true })
+                }).then(response => response.json());
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+                return null;
+            }
+        } else {
+            return data;
+        }
+    })
+    .then(data => {
+        if (data) {
+            alert(`✓ Model matching complete!\n\nCanonical Models: ${data.canonical_models_created}\nMatches Created: ${data.model_matches_created}\nModels Processed: ${data.total_models_processed}`);
+            loadCanonicalModels();
+        }
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+</script>
+
+<style>
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.badge-gray {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.btn {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn:hover {
+    background: #1d4ed8;
+}
+
+.btn:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+}
+</style>
+{% endblock %}

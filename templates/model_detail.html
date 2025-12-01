@@ -116,6 +116,16 @@
     </div>
     {% endif %}
     
+    <!-- Alternative Providers Section -->
+    <div id="alternatives-section" style="margin: 2rem 0;">
+        <h3 style="margin-bottom: 1rem;">🔄 Alternative Providers</h3>
+        <div id="alternatives-loading" style="text-align: center; padding: 2rem; color: #6b7280;">
+            Loading alternatives...
+        </div>
+        <div id="alternatives-content" style="display: none;"></div>
+        <div id="alternatives-error" style="display: none; padding: 1rem; background: #fee2e2; border-radius: 8px; color: #991b1b;"></div>
+    </div>
+    
     {% if model.tags %}
     <div style="margin: 2rem 0;">
         <h3 style="margin-bottom: 0.5rem;">Tags</h3>
@@ -161,6 +171,97 @@
 </div>
 
 <script>
+// Load alternatives on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadAlternatives({{ model.id }});
+});
+
+function loadAlternatives(modelId) {
+    fetch(`/api/models/${modelId}/with-alternatives`)
+        .then(response => response.json())
+        .then(data => {
+            const loading = document.getElementById('alternatives-loading');
+            const content = document.getElementById('alternatives-content');
+            const error = document.getElementById('alternatives-error');
+            
+            loading.style.display = 'none';
+            
+            if (data.error) {
+                error.textContent = data.error;
+                error.style.display = 'block';
+                return;
+            }
+            
+            if (!data.alternatives || data.alternatives.length === 0) {
+                content.innerHTML = '<p style="color: #6b7280; text-align: center; padding: 2rem;">No alternative providers found. Run model matching to find similar models across providers.</p>';
+                content.style.display = 'block';
+                return;
+            }
+            
+            // Show alternatives
+            let html = '';
+            
+            // Show potential savings if available
+            if (data.potential_savings > 0) {
+                html += `
+                    <div style="background: #d1fae5; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid #10b981;">
+                        <strong style="color: #065f46;">💰 Potential Savings:</strong>
+                        <span style="color: #047857; font-size: 1.2rem; font-weight: 600;"> $${data.potential_savings.toFixed(6)} per call</span>
+                        <span style="color: #065f46;"> with ${data.best_alternative.provider}</span>
+                    </div>
+                `;
+            }
+            
+            html += '<div style="display: grid; gap: 1rem;">';
+            
+            data.alternatives.forEach((alt, index) => {
+                const isCheapest = index === 0;
+                const borderColor = isCheapest ? '#10b981' : '#e5e7eb';
+                const bgColor = isCheapest ? '#f0fdf4' : '#ffffff';
+                
+                html += `
+                    <div style="border: 2px solid ${borderColor}; background: ${bgColor}; padding: 1.5rem; border-radius: 8px; position: relative;">
+                        ${isCheapest ? '<div style="position: absolute; top: -12px; right: 20px; background: #10b981; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">✓ Best Price</div>' : ''}
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                            <div>
+                                <h4 style="margin: 0 0 0.5rem 0; color: #1f2937;">${alt.name}</h4>
+                                <p style="color: #6b7280; margin: 0; font-size: 0.9rem;">Provider: ${alt.provider}</p>
+                            </div>
+                            <div style="text-align: right;">
+                                <p style="font-size: 1.5rem; font-weight: 700; color: ${isCheapest ? '#10b981' : '#2563eb'}; margin: 0;">
+                                    $${alt.cost_per_call ? alt.cost_per_call.toFixed(6) : 'N/A'}
+                                </p>
+                                <p style="color: #6b7280; font-size: 0.85rem; margin: 0.25rem 0 0 0;">per call</p>
+                            </div>
+                        </div>
+                        
+                        ${alt.description ? `<p style="color: #4b5563; font-size: 0.9rem; margin-bottom: 1rem;">${alt.description}</p>` : ''}
+                        
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <span class="badge badge-blue">${alt.model_type}</span>
+                            <span style="color: #6b7280; font-size: 0.85rem;">Confidence: ${(alt.confidence * 100).toFixed(0)}%</span>
+                            <a href="/models/${alt.model_id}" class="btn" style="margin-left: auto; padding: 0.5rem 1rem;">View Details</a>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            content.innerHTML = html;
+            content.style.display = 'block';
+        })
+        .catch(err => {
+            const loading = document.getElementById('alternatives-loading');
+            const error = document.getElementById('alternatives-error');
+            
+            loading.style.display = 'none';
+            error.textContent = 'Failed to load alternatives: ' + err.message;
+            error.style.display = 'block';
+        });
+}
+
 function refetchModel(modelId) {
     const btn = document.getElementById('refetchBtn');
     const originalText = btn.innerHTML;

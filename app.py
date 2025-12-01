@@ -383,6 +383,12 @@ def models():
         close_session()
 
 
+@app.route('/canonical-models')
+def canonical_models_page():
+    """Show unified view of models grouped by canonical name"""
+    return render_template('canonical_models.html')
+
+
 @app.route('/models/<int:model_id>')
 def model_detail(model_id):
     """Show detailed information about a model"""
@@ -723,33 +729,51 @@ def save_auth_settings():
         notes = request.form.get('notes', '').strip()
         is_active = 'is_active' in request.form
         
-        # Build cookies JSON from individual fields
-        cookies_dict = {}
+        # Check if this is credential-based auth (Runware) or cookie-based (fal.ai)
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
         
-        wos_session = request.form.get('wos_session', '').strip()
-        if wos_session:
-            cookies_dict['wos-session'] = wos_session
+        cookies_json = None
         
-        cf_clearance = request.form.get('cf_clearance', '').strip()
-        if cf_clearance:
-            cookies_dict['cf_clearance'] = cf_clearance
-        
-        unify_session_id = request.form.get('unify_session_id', '').strip()
-        if unify_session_id:
-            cookies_dict['unify_session_id'] = unify_session_id
-        
-        if not cookies_dict:
-            flash('At least one cookie is required (wos-session recommended)', 'error')
-            return redirect(url_for('auth_settings'))
-        
-        cookies_json = json.dumps(cookies_dict)
+        if username and password:
+            # Credential-based authentication (e.g., Runware)
+            print(f"Saving credential-based auth for {source_name}: {username}")
+        else:
+            # Cookie-based authentication (e.g., fal.ai)
+            # Build cookies JSON from individual fields
+            cookies_dict = {}
+            
+            wos_session = request.form.get('wos_session', '').strip()
+            if wos_session:
+                cookies_dict['wos-session'] = wos_session
+            
+            cf_clearance = request.form.get('cf_clearance', '').strip()
+            if cf_clearance:
+                cookies_dict['cf_clearance'] = cf_clearance
+            
+            unify_session_id = request.form.get('unify_session_id', '').strip()
+            if unify_session_id:
+                cookies_dict['unify_session_id'] = unify_session_id
+            
+            if not cookies_dict:
+                flash('Either credentials or cookies are required', 'error')
+                return redirect(url_for('auth_settings'))
+            
+            cookies_json = json.dumps(cookies_dict)
         
         # Check if already exists
         auth_config = session.query(AuthSettings).filter_by(source_name=source_name).first()
         
         if auth_config:
             # Update existing
-            auth_config.cookies = cookies_json
+            if username and password:
+                auth_config.username = username
+                auth_config.password = password
+                auth_config.cookies = None
+            else:
+                auth_config.cookies = cookies_json
+                auth_config.username = None
+                auth_config.password = None
             auth_config.headers = None  # Not used in simplified version
             auth_config.session_data = None
             auth_config.notes = notes or None
@@ -761,6 +785,8 @@ def save_auth_settings():
             auth_config = AuthSettings(
                 source_name=source_name,
                 cookies=cookies_json,
+                username=username or None,
+                password=password or None,
                 headers=None,
                 session_data=None,
                 notes=notes or None,
@@ -1293,6 +1319,148 @@ def refetch_filtered():
         
     except Exception as e:
         session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+# ==============================================================================
+# Model Matching API Endpoints
+# ==============================================================================
+
+@app.route('/api/match-models', methods=['POST'])
+def match_models():
+    """Run model matching across all providers"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    
+    session = get_session()
+    try:
+        force_refresh = request.json.get('force_refresh', False) if request.is_json else False
+        
+        service = ModelMatchingService(session)
+        result = service.match_all_models(force_refresh=force_refresh)
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/models/<int:model_id>/alternatives', methods=['GET'])
+def get_model_alternatives(model_id):
+    """Get alternative providers for a specific model"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    
+    session = get_session()
+    try:
+        service = ModelMatchingService(session)
+        alternatives = service.get_alternatives(model_id)
+        
+        return jsonify({
+            'model_id': model_id,
+            'alternatives': alternatives
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/models/<int:model_id>/with-alternatives', methods=['GET'])
+def get_model_with_alternatives(model_id):
+    """Get a model with all its alternatives and pricing comparison"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    
+    session = get_session()
+    try:
+        service = ModelMatchingService(session)
+        result = service.get_model_with_alternatives(model_id)
+        
+        if not result:
+            return jsonify({'error': 'Model not found'}), 404
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models', methods=['GET'])
+def get_canonical_models():
+    """Get all canonical models with provider details"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    
+    session = get_session()
+    try:
+        model_type = request.args.get('model_type')
+        
+        service = ModelMatchingService(session)
+        models = service.get_canonical_models(model_type=model_type)
+        
+        return jsonify({
+            'total': len(models),
+            'models': models
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models/<int:canonical_id>', methods=['GET'])
+def get_canonical_model_detail(canonical_id):
+    """Get details of a specific canonical model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import CanonicalModel, ModelMatch
+        
+        canonical = session.query(CanonicalModel).filter(
+            CanonicalModel.id == canonical_id
+        ).first()
+        
+        if not canonical:
+            return jsonify({'error': 'Canonical model not found'}), 404
+        
+        # Get all matches
+        matches = session.query(ModelMatch).filter(
+            ModelMatch.canonical_model_id == canonical_id
+        ).all()
+        
+        providers = []
+        for match in matches:
+            if match.ai_model and match.ai_model.is_active:
+                providers.append({
+                    'model_id': match.ai_model.id,
+                    'name': match.ai_model.name,
+                    'provider': match.ai_model.source.name if match.ai_model.source else 'unknown',
+                    'cost_per_call': match.ai_model.cost_per_call,
+                    'pricing_formula': match.ai_model.pricing_formula,
+                    'description': match.ai_model.description,
+                    'confidence': match.confidence,
+                })
+        
+        # Sort by price
+        providers.sort(key=lambda x: x['cost_per_call'] if x['cost_per_call'] else float('inf'))
+        
+        return jsonify({
+            'canonical_id': canonical.id,
+            'canonical_name': canonical.canonical_name,
+            'display_name': canonical.display_name,
+            'description': canonical.description,
+            'model_type': canonical.model_type,
+            'tags': canonical.tags,
+            'provider_count': len(providers),
+            'providers': providers,
+            'best_price': providers[0] if providers else None,
+        })
+    
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
         close_session()

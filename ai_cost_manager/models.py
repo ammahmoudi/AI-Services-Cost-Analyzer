@@ -52,6 +52,8 @@ class AuthSettings(Base):
     cookies = Column(Text, nullable=True)  # JSON string of cookies
     headers = Column(Text, nullable=True)  # JSON string of custom headers
     session_data = Column(Text, nullable=True)  # Additional session data
+    username = Column(String(255), nullable=True)  # For credential-based auth (e.g., Runware)
+    password = Column(Text, nullable=True)  # For credential-based auth (encrypted recommended)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -155,3 +157,44 @@ class CacheEntry(Base):
     
     def __repr__(self):
         return f"<CacheEntry(model_id={self.model_id}, type='{self.cache_type}')>"
+
+
+class CanonicalModel(Base):
+    """Represents a canonical/unified model identity across providers"""
+    __tablename__ = 'canonical_models'
+    
+    id = Column(Integer, primary_key=True)
+    canonical_name = Column(String(200), unique=True, nullable=False)  # e.g., 'flux-dev-1.0'
+    display_name = Column(String(200), nullable=False)  # User-friendly name
+    description = Column(Text, nullable=True)  # Description of the base model
+    model_type = Column(String(50), nullable=True)  # 'text-to-image', etc.
+    tags = Column(JSON, default=list)
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    model_matches = relationship('ModelMatch', back_populates='canonical_model', cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f"<CanonicalModel(name='{self.canonical_name}')>"
+
+
+class ModelMatch(Base):
+    """Links AIModel instances to their canonical model"""
+    __tablename__ = 'model_matches'
+    
+    id = Column(Integer, primary_key=True)
+    canonical_model_id = Column(Integer, ForeignKey('canonical_models.id'), nullable=False)
+    ai_model_id = Column(Integer, ForeignKey('ai_models.id'), nullable=False)
+    confidence = Column(Float, default=1.0)  # Match confidence 0-1
+    matched_by = Column(String(50), default='manual')  # 'llm', 'manual', 'rule'
+    matched_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    canonical_model = relationship('CanonicalModel', back_populates='model_matches')
+    ai_model = relationship('AIModel')
+    
+    def __repr__(self):
+        return f"<ModelMatch(canonical_id={self.canonical_model_id}, model_id={self.ai_model_id}, confidence={self.confidence})>"
