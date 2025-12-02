@@ -424,7 +424,7 @@ class RunwareExtractor:
             
             print(f"Visiting playground for {air}...")
             try:
-                page.goto(playground_url, wait_until='networkidle', timeout=15000)
+                page.goto(playground_url, wait_until='domcontentloaded', timeout=45000)
                 time.sleep(1)
                 
                 # Check if we got a 404 or error page
@@ -434,12 +434,12 @@ class RunwareExtractor:
                     # Fallback to generic playground URL
                     print(f"  Category URL failed, trying generic URL...")
                     playground_url = f'https://my.runware.ai/playground?modelAIR={air}'
-                    page.goto(playground_url, wait_until='networkidle', timeout=15000)
+                    page.goto(playground_url, wait_until='domcontentloaded', timeout=45000)
             except Exception:
                 # If category-specific URL fails, try generic
                 print("  Category URL error, trying generic URL...")
                 playground_url = f'https://my.runware.ai/playground?modelAIR={air}'
-                page.goto(playground_url, wait_until='networkidle', timeout=15000)
+                page.goto(playground_url, wait_until='domcontentloaded', timeout=45000)
             time.sleep(2)  # Wait for page to fully load and pricing to display
             
             # Extract model name and try to get description/details

@@ -101,13 +101,13 @@ def start_application():
     print("🚀 Starting application...")
     
     # Run with gunicorn for production
-    # Increased timeout to 180s to accommodate LLM API calls (30s timeout + overhead)
+    # Increased timeout to 300s to accommodate long extraction jobs with Playwright
     subprocess.run([
         'gunicorn',
         '--bind', '0.0.0.0:5000',
         '--workers', '4',
-        '--timeout', '180',
-        '--graceful-timeout', '30',
+        '--timeout', '300',
+        '--graceful-timeout', '60',
         '--access-logfile', '-',
         '--error-logfile', '-',
         'app:app'
