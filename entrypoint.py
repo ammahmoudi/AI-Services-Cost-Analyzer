@@ -12,27 +12,51 @@ def run_migrations():
     """Run all database migrations"""
     print("🔧 Running database migrations...")
     
+    # Add migrations directory to Python path
     migrations_dir = Path('/app/migrations')
+    sys.path.insert(0, str(migrations_dir.parent))
     
     if not migrations_dir.exists():
         print("⚠️  No migrations directory found, skipping...")
         return True
     
+    # Import migration tracker
+    try:
+        from migrations.migration_tracker import is_migration_applied, mark_migration_applied
+    except Exception as e:
+        print(f"⚠️  Could not import migration tracker: {e}")
+        print("  Running migrations without tracking...")
+        is_migration_applied = lambda x: False
+        mark_migration_applied = lambda x: None
+    
     # Get all migration files
     migration_files = sorted([
         f for f in migrations_dir.glob('*.py')
-        if not f.name.startswith('__') and not f.name.startswith('.')
+        if not f.name.startswith('__') 
+        and not f.name.startswith('.')
+        and f.name != 'migration_tracker.py'  # Skip the tracker itself
     ])
     
     if not migration_files:
         print("ℹ️  No migrations to run")
         return True
     
-    print(f"Found {len(migration_files)} migration(s)")
+    print(f"Found {len(migration_files)} migration file(s)")
+    
+    skipped = 0
+    applied = 0
     
     for migration_file in migration_files:
+        migration_name = migration_file.stem  # filename without .py
+        
+        # Check if already applied
+        if is_migration_applied(migration_name):
+            print(f"  {migration_file.name}... ⏭️  (already applied)")
+            skipped += 1
+            continue
+        
         try:
-            print(f"  Running {migration_file.name}...", end=" ")
+            print(f"  {migration_file.name}...", end=" ")
             result = subprocess.run(
                 [sys.executable, str(migration_file)],
                 cwd='/app',
@@ -43,12 +67,24 @@ def run_migrations():
             
             if result.returncode == 0:
                 print("✅")
+                # Mark as applied
+                try:
+                    mark_migration_applied(migration_name)
+                    applied += 1
+                except Exception as e:
+                    print(f"    ⚠️  Could not mark migration as applied: {e}")
             else:
                 print("⚠️")
                 if result.stderr:
                     # Only print if it's not "already exists" error
                     if "already exists" not in result.stderr.lower():
                         print(f"    {result.stderr[:200]}")
+                    else:
+                        # Still mark as applied if it's just "already exists"
+                        try:
+                            mark_migration_applied(migration_name)
+                        except:
+                            pass
         
         except subprocess.TimeoutExpired:
             print(f"❌ Timeout")
@@ -57,7 +93,7 @@ def run_migrations():
             print(f"❌ Error: {e}")
             # Don't fail on migration errors - they might be idempotent
     
-    print("✅ Migrations complete")
+    print(f"✅ Migrations complete (applied: {applied}, skipped: {skipped})")
     return True
 
 def start_application():
