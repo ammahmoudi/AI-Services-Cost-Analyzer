@@ -369,26 +369,6 @@ function cancelExtraction(taskId) {
         alert('Error cancelling extraction: ' + error);
     });
 }
-                    
-                    if (data.status === 'complete') {
-                        document.getElementById('progressStatus').textContent = '✅ Complete!';
-                        document.getElementById('progressStatus').style.color = '#059669';
-                        
-                        setTimeout(() => {
-                            closeProgressDialog();
-                            location.reload();
-                        }, 2000);
-                    } else {
-                        document.getElementById('progressStatus').textContent = '❌ Error';
-                        document.getElementById('progressStatus').style.color = '#dc2626';
-                    }
-                }
-            })
-            .catch(error => {
-                console.error('Progress polling error:', error);
-            });
-    }, 500);  // Poll every 500ms
-}
 
 function extractWithOptions() {
     console.log('extractWithOptions called');
