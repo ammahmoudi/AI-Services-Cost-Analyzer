@@ -16,6 +16,27 @@ load_dotenv()
 # Get database URL from environment or use default SQLite
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///ai_costs.db')
 
+# Fix for Heroku/some platforms that use postgres:// instead of postgresql://
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    print("🔧 Fixed database URL format (postgres:// -> postgresql://)")
+
+# Log database configuration (hide password)
+if DATABASE_URL.startswith('postgresql'):
+    # Extract and log connection details without password
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(DATABASE_URL)
+        safe_url = f"{parsed.scheme}://{parsed.username}:***@{parsed.hostname}:{parsed.port}{parsed.path}"
+        print(f"✅ Using PostgreSQL: {safe_url}")
+    except:
+        print("✅ Using PostgreSQL database")
+elif DATABASE_URL.startswith('sqlite'):
+    print(f"⚠️  Using SQLite: {DATABASE_URL}")
+    print("   Note: SQLite data may not persist in containerized environments!")
+else:
+    print(f"⚠️  Using database: {DATABASE_URL[:50]}...")
+
 # Configure engine based on database type
 if DATABASE_URL.startswith('postgresql'):
     # PostgreSQL configuration
@@ -61,7 +82,7 @@ def _seed_default_sources():
     default_sources = [
         {
             'name': 'fal.ai',
-            'url': 'https://fal.ai/models',
+            'url': 'https://fal.ai/api/trpc/models.list',
             'extractor_name': 'fal',
             'is_active': True
         },

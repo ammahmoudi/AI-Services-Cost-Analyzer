@@ -118,6 +118,19 @@ if __name__ == '__main__':
     print("🐳 AI Cost Manager - Container Startup")
     print("="*60)
     
+    # Show database configuration
+    import os
+    db_url = os.getenv('DATABASE_URL', 'Not set')
+    if db_url and db_url != 'Not set':
+        # Hide password in logs
+        if '@' in db_url:
+            user_host = db_url.split('@')[1] if '@' in db_url else 'unknown'
+            print(f"📊 Database: {user_host.split('/')[0] if '/' in user_host else user_host}")
+        else:
+            print(f"📊 Database: {db_url[:30]}...")
+    else:
+        print("⚠️  DATABASE_URL not set - using default SQLite")
+    
     # Run migrations
     if not run_migrations():
         print("❌ Migration failed, but continuing anyway...")

@@ -1,7 +1,8 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database
+  # PostgreSQL Database (for local development only)
+  # In production, use an external managed PostgreSQL database
   postgres:
     image: postgres:15-alpine
     container_name: ai-costs-db
@@ -19,6 +20,8 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    profiles:
+      - local  # Only start for local dev: docker compose --profile local up
 
   # AI Services Cost Analyzer Application
   app:
@@ -26,7 +29,9 @@ services:
     container_name: ai-costs-app
     environment:
       # Database configuration
-      DATABASE_URL: postgresql://ai_costs_user:ai_costs_password@postgres:5432/ai_costs
+      # For production, set DATABASE_URL to your external PostgreSQL
+      # Example: postgresql://user:password@external-db-host:5432/dbname
+      DATABASE_URL: ${DATABASE_URL:-postgresql://ai_costs_user:ai_costs_password@postgres:5432/ai_costs}
       
       # Cache backend (database or file)
       CACHE_BACKEND: database
@@ -44,9 +49,10 @@ services:
       
       # Mount .env for local development (optional)
       # - ./.env:/app/.env
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # Only depend on postgres if running with --profile local
+    # depends_on:
+    #   postgres:
+    #     condition: service_healthy
     restart: unless-stopped
 
   # Optional: pgAdmin for database management
