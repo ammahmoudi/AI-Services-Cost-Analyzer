@@ -258,23 +258,6 @@ function showProgressDialog(sourceId, sourceName, taskId) {
     // Start polling for task progress
     startProgressPolling(taskId);
 }
-        
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem;">
-            <span id="speedInfo">-</span>
-            <span id="timeInfo">-</span>
-        </div>
-        
-        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
-            <button class="btn" style="background: #6b7280; display: none;" id="closeProgressBtn" onclick="closeProgressDialog()">Close</button>
-        </div>
-    `;
-    
-    modal.appendChild(modalContent);
-    document.body.appendChild(modal);
-    
-    // Start polling for progress
-    startProgressPolling(sourceId);
-}
 
 function closeProgressDialog() {
     if (progressPollInterval) {
