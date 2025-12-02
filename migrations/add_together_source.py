@@ -3,68 +3,48 @@ Migration: Add Together.ai API Source
 
 Adds Together.ai as an available API source in the database.
 """
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from ai_cost_manager.models import APISource
-from datetime import datetime
+import sys
 import os
 
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def run_migration():
+from sqlalchemy import create_engine, text
+from ai_cost_manager.database import DATABASE_URL
+
+
+def upgrade():
     """Add Together.ai source to the database"""
-    # Get database path
-    db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'ai_costs.db')
+    engine = create_engine(DATABASE_URL)
     
-    if not os.path.exists(db_path):
-        print(f"❌ Database not found at {db_path}")
-        print("Please run the application first to create the database.")
-        return
+    with engine.connect() as conn:
+        try:
+            # Check if Together.ai source already exists
+            result = conn.execute(text(
+                "SELECT COUNT(*) FROM api_sources WHERE name = 'Together AI'"
+            ))
+            count = result.scalar()
+            
+            if count > 0:
+                print("✓ Together AI source already exists")
+                return
+            
+            # Insert Together.ai source
+            conn.execute(text("""
+                INSERT INTO api_sources (name, url, extractor_name, is_active, created_at, updated_at)
+                VALUES ('Together AI', 'https://api.together.xyz/v1/models', 'together', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            """))
+            conn.commit()
+            
+            print("✓ Added Together AI source")
+            
+        except Exception as e:
+            print(f"  Error: {e}")
     
-    engine = create_engine(f'sqlite:///{db_path}')
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    
-    try:
-        # Check if Together.ai source already exists
-        existing = session.query(APISource).filter_by(name="Together AI").first()
-        
-        if existing:
-            print("✓ Together AI source already exists")
-            print(f"  ID: {existing.id}")
-            print(f"  URL: {existing.url}")
-            print(f"  Extractor: {existing.extractor_name}")
-            print(f"  Active: {existing.is_active}")
-            return
-        
-        # Create Together.ai source
-        together_source = APISource(
-            name="Together AI",
-            url="https://api.together.xyz/v1/models",
-            extractor_name="together",
-            is_active=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
-        
-        session.add(together_source)
-        session.commit()
-        
-        print("✅ Together AI source added successfully!")
-        print(f"  ID: {together_source.id}")
-        print(f"  Name: {together_source.name}")
-        print(f"  URL: {together_source.url}")
-        print(f"  Extractor: {together_source.extractor_name}")
-        print("\n💡 You can now extract models from Together AI in the web UI!")
-        print("   Note: Set up your Together AI API key in Settings for full access.")
-        
-    except Exception as e:
-        session.rollback()
-        print(f"❌ Error adding Together AI source: {e}")
-        raise
-    finally:
-        session.close()
+    print("\n✅ Migration completed!")
 
 
 if __name__ == "__main__":
-    run_migration()
+    print("Running migration: Add Together AI source\n")
+    upgrade()
 

@@ -51,26 +51,33 @@ def ensure_migration_table():
 
 def is_migration_applied(migration_name: str) -> bool:
     """Check if a migration has already been applied"""
-    engine = ensure_migration_table()
-    
-    with engine.connect() as conn:
-        result = conn.execute(
-            text("SELECT COUNT(*) FROM migration_history WHERE migration_name = :name"),
-            {"name": migration_name}
-        )
-        count = result.scalar()
-        return count > 0
+    try:
+        engine = ensure_migration_table()
+        
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("SELECT COUNT(*) FROM migration_history WHERE migration_name = :name"),
+                {"name": migration_name}
+            )
+            count = result.scalar()
+            return count > 0 if count is not None else False
+    except Exception as e:
+        print(f"    Warning: Could not check migration status: {e}")
+        return False
 
 def mark_migration_applied(migration_name: str):
     """Mark a migration as applied"""
-    engine = ensure_migration_table()
-    
-    with engine.connect() as conn:
-        conn.execute(
-            text("INSERT INTO migration_history (migration_name, applied_at) VALUES (:name, :applied_at)"),
-            {"name": migration_name, "applied_at": datetime.utcnow()}
-        )
-        conn.commit()
+    try:
+        engine = ensure_migration_table()
+        
+        with engine.connect() as conn:
+            conn.execute(
+                text("INSERT INTO migration_history (migration_name, applied_at) VALUES (:name, :applied_at)"),
+                {"name": migration_name, "applied_at": datetime.utcnow()}
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"    Warning: Could not mark migration as applied: {e}")
 
 def get_migration_history():
     """Get all applied migrations"""
