@@ -16,19 +16,30 @@ def upgrade():
     """Add model matching tables"""
     engine = create_engine(DATABASE_URL)
     
+    # Detect database type
+    is_postgres = DATABASE_URL.startswith('postgresql')
+    
+    # Use appropriate SQL syntax for database type
+    if is_postgres:
+        pk_type = "SERIAL PRIMARY KEY"
+        timestamp_default = "CURRENT_TIMESTAMP"
+    else:
+        pk_type = "INTEGER PRIMARY KEY AUTOINCREMENT"
+        timestamp_default = "CURRENT_TIMESTAMP"
+    
     with engine.connect() as conn:
         # Create canonical_models table
         try:
-            conn.execute(text("""
+            conn.execute(text(f"""
                 CREATE TABLE IF NOT EXISTS canonical_models (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id {pk_type},
                     canonical_name VARCHAR(255) NOT NULL UNIQUE,
                     display_name VARCHAR(255),
                     description TEXT,
                     model_type VARCHAR(50),
                     tags TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT {timestamp_default},
+                    updated_at TIMESTAMP DEFAULT {timestamp_default}
                 )
             """))
             conn.commit()
@@ -38,14 +49,14 @@ def upgrade():
         
         # Create model_matches table
         try:
-            conn.execute(text("""
+            conn.execute(text(f"""
                 CREATE TABLE IF NOT EXISTS model_matches (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id {pk_type},
                     canonical_model_id INTEGER NOT NULL,
                     ai_model_id INTEGER NOT NULL,
                     confidence FLOAT DEFAULT 0.0,
                     matched_by VARCHAR(50) DEFAULT 'llm',
-                    matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    matched_at TIMESTAMP DEFAULT {timestamp_default},
                     FOREIGN KEY (canonical_model_id) REFERENCES canonical_models(id) ON DELETE CASCADE,
                     FOREIGN KEY (ai_model_id) REFERENCES ai_models(id) ON DELETE CASCADE,
                     UNIQUE(canonical_model_id, ai_model_id)

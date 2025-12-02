@@ -21,7 +21,32 @@ class MigrationHistory(Base):
 def ensure_migration_table():
     """Create migration tracking table if it doesn't exist"""
     engine = create_engine(DATABASE_URL)
-    Base.metadata.create_all(engine, checkfirst=True)
+    
+    # Use raw SQL to create table with proper PostgreSQL support
+    is_postgres = DATABASE_URL.startswith('postgresql')
+    
+    with engine.connect() as conn:
+        try:
+            if is_postgres:
+                # PostgreSQL syntax
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS migration_history (
+                        migration_name VARCHAR(255) PRIMARY KEY,
+                        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                # SQLite syntax
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS migration_history (
+                        migration_name VARCHAR(255) PRIMARY KEY,
+                        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            conn.commit()
+        except Exception as e:
+            print(f"Warning: Could not create migration_history table: {e}")
+    
     return engine
 
 def is_migration_applied(migration_name: str) -> bool:
