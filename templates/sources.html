@@ -59,7 +59,9 @@
                     <td>{{ source.models|length }}</td>
                     <td>{{ source.last_extracted.strftime('%Y-%m-%d %H:%M') if source.last_extracted else 'Never' }}</td>
                     <td>
-                        <button class="btn btn-small btn-success" onclick="showExtractDialog({{ source.id }}, '{{ source.name|replace("'", "\\'") }}')">Extract</button>
+                        <button class="btn btn-small btn-success" onclick="showExtractDialog({{ source.id }}, '{{ source.name|replace("'", "\\'") }}')" id="extract-btn-{{ source.id }}">
+                            Extract
+                        </button>
                         <form method="POST" action="/sources/{{ source.id }}/delete" style="display: inline;">
                             <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Delete this source?')">Delete</button>
                         </form>
@@ -102,21 +104,49 @@ function showExtractDialog(sourceId, sourceName) {
     console.log('showExtractDialog called with:', sourceId, sourceName);
     extractSourceId = sourceId;
     
-    // Fetch extractor features first
-    fetch(`/api/sources/${sourceId}/features`)
+    // First check if there's already a running task for this source
+    fetch(`/api/sources/${sourceId}/active-task`)
         .then(response => response.json())
-        .then(features => {
-            extractorFeatures = features;
-            showExtractModalWithFeatures(sourceName, features);
+        .then(data => {
+            if (data.task_id && data.status !== 'completed' && data.status !== 'failed' && data.status !== 'cancelled') {
+                // Show progress dialog for existing task
+                showProgressDialog(sourceId, sourceName, data.task_id);
+                return;
+            }
+            
+            // No active task, show extraction options dialog
+            return fetch(`/api/sources/${sourceId}/features`)
+                .then(response => response.json())
+                .then(features => {
+                    extractorFeatures = features;
+                    showExtractModalWithFeatures(sourceName, features);
+                })
+                .catch(error => {
+                    console.error('Failed to fetch extractor features:', error);
+                    showExtractModalWithFeatures(sourceName, {
+                        supports_schemas: false,
+                        supports_llm: false,
+                        supports_playground: false
+                    });
+                });
         })
         .catch(error => {
-            console.error('Failed to fetch extractor features:', error);
-            // Show modal anyway with all options disabled
-            showExtractModalWithFeatures(sourceName, {
-                supports_schemas: false,
-                supports_llm: false,
-                supports_playground: false
-            });
+            console.error('Failed to check for active task:', error);
+            // Continue with normal flow
+            fetch(`/api/sources/${sourceId}/features`)
+                .then(response => response.json())
+                .then(features => {
+                    extractorFeatures = features;
+                    showExtractModalWithFeatures(sourceName, features);
+                })
+                .catch(error => {
+                    console.error('Failed to fetch extractor features:', error);
+                    showExtractModalWithFeatures(sourceName, {
+                        supports_schemas: false,
+                        supports_llm: false,
+                        supports_playground: false
+                    });
+                });
         });
 }
 
@@ -274,6 +304,8 @@ function startProgressPolling(taskId) {
         fetch(`/api/tasks/${taskId}`)
             .then(response => response.json())
             .then(data => {
+                console.log('Task status:', data); // Debug log
+                
                 if (data.error) {
                     clearInterval(progressPollInterval);
                     progressPollInterval = null;
@@ -298,7 +330,9 @@ function startProgressPolling(taskId) {
                 document.getElementById('updatedCount').textContent = data.updated_models || 0;
                 
                 // Update current model
-                document.getElementById('currentModel').textContent = data.current_model || '-';
+                if (data.current_model) {
+                    document.getElementById('currentModel').textContent = data.current_model;
+                }
                 
                 // Update status
                 const statusMap = {
@@ -327,8 +361,9 @@ function startProgressPolling(taskId) {
                     clearInterval(progressPollInterval);
                     progressPollInterval = null;
                     document.getElementById('progressStatus').style.color = '#dc2626';
+                    document.getElementById('progressBar').style.background = '#dc2626';
                     document.getElementById('errorMessage').style.display = 'block';
-                    document.getElementById('errorText').textContent = data.error_message || 'Unknown error';
+                    document.getElementById('errorText').textContent = data.error_message || 'Unknown error occurred during extraction';
                     document.getElementById('cancelBtn').style.display = 'none';
                     document.getElementById('closeProgressBtn').style.display = 'block';
                 } else if (data.status === 'cancelled') {
@@ -433,5 +468,27 @@ function extractSource(sourceId) {
     const sourceName = event.target.closest('tr').querySelector('strong').textContent;
     showExtractDialog(sourceId, sourceName);
 }
+
+// Check for active tasks on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const extractButtons = document.querySelectorAll('[id^="extract-btn-"]');
+    extractButtons.forEach(button => {
+        const sourceId = button.id.replace('extract-btn-', '');
+        fetch(`/api/sources/${sourceId}/active-task`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.active && data.status === 'running') {
+                    button.textContent = '🔄 Running...';
+                    button.style.background = '#f59e0b';
+                } else if (data.active && data.status === 'pending') {
+                    button.textContent = '⏳ Pending...';
+                    button.style.background = '#6b7280';
+                }
+            })
+            .catch(error => {
+                console.error(`Failed to check active task for source ${sourceId}:`, error);
+            });
+    });
+});
 </script>
 {% endblock %}

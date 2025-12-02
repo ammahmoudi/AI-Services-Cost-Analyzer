@@ -275,15 +275,16 @@ def extract_source(source_id):
                 batch_count = 0
                 
                 for idx, model_data in enumerate(models_data):
-                    # Check if task was cancelled
-                    thread_session.refresh(task)
-                    if task.status == 'cancelled':
-                        task.error_message = 'Extraction cancelled by user'
-                        task.completed_at = datetime.utcnow()
-                        thread_session.commit()
-                        return
-                    
                     try:
+                        # Re-query task to check cancellation (avoid detached instance issues)
+                        current_task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
+                        if not current_task or current_task.status == 'cancelled':
+                            if current_task:
+                                current_task.error_message = 'Extraction cancelled by user'
+                                current_task.completed_at = datetime.utcnow()
+                                thread_session.commit()
+                            return
+                        
                         filtered_data = {
                             k: v for k, v in model_data.items()
                             if hasattr(AIModel, k)
@@ -306,12 +307,12 @@ def extract_source(source_id):
                         
                         batch_count += 1
                         
-                        # Update task progress
-                        task.processed_models = idx + 1
-                        task.new_models = new_count
-                        task.updated_models = updated_count
-                        task.current_model = model_data.get('name', 'Unknown')
-                        task.progress = int((idx + 1) / len(models_data) * 100)
+                        # Update task progress (use current_task to avoid detached issues)
+                        current_task.processed_models = idx + 1
+                        current_task.new_models = new_count
+                        current_task.updated_models = updated_count
+                        current_task.current_model = model_data.get('name', 'Unknown')
+                        current_task.progress = int((idx + 1) / len(models_data) * 100)
                         
                         # Commit in batches
                         if batch_count >= batch_size:
@@ -322,30 +323,43 @@ def extract_source(source_id):
                         print(f"Warning: Error saving model {model_data.get('model_id', 'unknown')}: {str(model_error)}")
                         thread_session.rollback()
                         batch_count = 0
+                        # Re-query task after rollback
+                        task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
                         continue
                 
                 # Commit remaining models
                 if batch_count > 0:
                     thread_session.commit()
                 
-                # Update source last_extracted timestamp
+                # Re-query task and source for final update
+                task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
                 source = thread_session.query(APISource).filter_by(id=source_db_id).first()
+                
                 if source:
                     source.last_extracted = datetime.utcnow()
                 
                 # Mark task as completed
-                task.status = 'completed'
-                task.progress = 100
-                task.completed_at = datetime.utcnow()
-                thread_session.commit()
-                
-            except Exception as e:
-                task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
                 if task:
-                    task.status = 'failed'
-                    task.error_message = str(e)
+                    task.status = 'completed'
+                    task.progress = 100
                     task.completed_at = datetime.utcnow()
                     thread_session.commit()
+                
+            except Exception as e:
+                import traceback
+                error_trace = traceback.format_exc()
+                print(f"❌ Extraction error: {error_trace}")
+                
+                # Re-query task for error update
+                try:
+                    task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
+                    if task:
+                        task.status = 'failed'
+                        task.error_message = str(e)
+                        task.completed_at = datetime.utcnow()
+                        thread_session.commit()
+                except Exception as inner_error:
+                    print(f"❌ Failed to update task error: {inner_error}")
             finally:
                 close_session()
         
@@ -1115,6 +1129,35 @@ def get_task_status(task_id):
             'error_message': task.error_message,
             'started_at': task.started_at.isoformat() if task.started_at else None,
             'completed_at': task.completed_at.isoformat() if task.completed_at else None,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/sources/<int:source_id>/active-task', methods=['GET'])
+def get_source_active_task(source_id):
+    """Get any active extraction task for a source"""
+    from ai_cost_manager.models import ExtractionTask
+    
+    session = get_session()
+    try:
+        # Look for any pending or running task for this source
+        task = session.query(ExtractionTask).filter(
+            ExtractionTask.source_id == source_id,
+            ExtractionTask.status.in_(['pending', 'running'])
+        ).order_by(ExtractionTask.started_at.desc()).first()
+        
+        if not task:
+            return jsonify({'active': False})
+        
+        return jsonify({
+            'active': True,
+            'task_id': task.id,
+            'status': task.status,
+            'progress': task.progress,
+            'started_at': task.started_at.isoformat() if task.started_at else None
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

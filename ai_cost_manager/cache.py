@@ -138,43 +138,27 @@ class FileCacheBackend:
 
 
 class DatabaseCacheBackend:
-    """Database-based cache backend"""
+    """Database-based cache backend - independent of AIModel"""
     
     def __init__(self):
         pass
-    
-    def _get_model_by_identifier(self, source_name: str, model_id: str):
-        from .database import get_session
-        from .models import AIModel, APISource
-        
-        session = get_session()
-        try:
-            model = (
-                session.query(AIModel)
-                .join(APISource)
-                .filter(APISource.name == source_name, AIModel.model_id == model_id)
-                .first()
-            )
-            return model
-        finally:
-            session.close()
     
     def save(self, source_name: str, model_id: str, cache_type: str, data: Dict[str, Any]) -> None:
         from .database import get_session
         from .models import CacheEntry
         
-        model = self._get_model_by_identifier(source_name, model_id)
-        if not model:
-            return
+        cache_key = f"{source_name}::{model_id}::{cache_type}"
         
         session = get_session()
         try:
-            session.query(CacheEntry).filter_by(
-                model_id=model.id, cache_type=cache_type
-            ).delete()
+            # Delete existing cache entry
+            session.query(CacheEntry).filter_by(cache_key=cache_key).delete()
             
+            # Create new cache entry
             cache_entry = CacheEntry(
-                model_id=model.id,
+                cache_key=cache_key,
+                source_name=source_name,
+                model_identifier=model_id,
                 cache_type=cache_type,
                 data=data,
                 cached_at=datetime.utcnow()
@@ -183,7 +167,7 @@ class DatabaseCacheBackend:
             session.commit()
         except Exception as e:
             session.rollback()
-            print(f"Error saving cache: {e}")
+            print(f"Error saving cache to database: {e}")
         finally:
             session.close()
     
@@ -191,18 +175,14 @@ class DatabaseCacheBackend:
         from .database import get_session
         from .models import CacheEntry
         
-        model = self._get_model_by_identifier(source_name, model_id)
-        if not model:
-            return None
+        cache_key = f"{source_name}::{model_id}::{cache_type}"
         
         session = get_session()
         try:
-            cache_entry = session.query(CacheEntry).filter_by(
-                model_id=model.id, cache_type=cache_type
-            ).first()
+            cache_entry = session.query(CacheEntry).filter_by(cache_key=cache_key).first()
             return cache_entry.data if cache_entry else None
         except Exception as e:
-            print(f"Error loading cache: {e}")
+            print(f"Error loading cache from database: {e}")
             return None
         finally:
             session.close()
@@ -211,37 +191,35 @@ class DatabaseCacheBackend:
         from .database import get_session
         from .models import CacheEntry
         
-        model = self._get_model_by_identifier(source_name, model_id)
-        if not model:
-            return False
+        cache_key = f"{source_name}::{model_id}::{cache_type}"
         
         session = get_session()
         try:
-            exists = session.query(CacheEntry).filter_by(
-                model_id=model.id, cache_type=cache_type
-            ).first() is not None
+            exists = session.query(CacheEntry).filter_by(cache_key=cache_key).first() is not None
             return exists
+        except Exception as e:
+            print(f"Error checking cache: {e}")
+            return False
         finally:
             session.close()
     
     def clear(self, source_name: Optional[str] = None, model_id: Optional[str] = None) -> None:
         from .database import get_session
-        from .models import CacheEntry, APISource
+        from .models import CacheEntry
         
         session = get_session()
         try:
-            if source_name and model_id:
-                model = self._get_model_by_identifier(source_name, model_id)
-                if model:
-                    session.query(CacheEntry).filter_by(model_id=model.id).delete()
-            elif source_name:
-                source = session.query(APISource).filter_by(name=source_name).first()
-                if source:
-                    model_ids = [m.id for m in source.models]
-                    session.query(CacheEntry).filter(CacheEntry.model_id.in_(model_ids)).delete(synchronize_session=False)
-            else:
-                session.query(CacheEntry).delete()
+            query = session.query(CacheEntry)
             
+            if source_name and model_id:
+                # Clear specific model: cache_key like "source::model_id::%"
+                query = query.filter(CacheEntry.cache_key.like(f"{source_name}::{model_id}::%"))
+            elif source_name:
+                # Clear entire source: cache_key like "source::%"
+                query = query.filter(CacheEntry.cache_key.like(f"{source_name}::%"))
+            # else: clear all (no filter)
+            
+            query.delete(synchronize_session=False)
             session.commit()
         except Exception as e:
             session.rollback()
@@ -265,7 +243,7 @@ class DatabaseCacheBackend:
     
     def get_stats(self) -> Dict[str, Any]:
         from .database import get_session
-        from .models import CacheEntry, APISource
+        from .models import CacheEntry
         from sqlalchemy import func
         
         session = get_session()
@@ -282,7 +260,7 @@ class DatabaseCacheBackend:
             
             # Count by type
             for cache_type in ['raw', 'schema', 'playground', 'llm']:
-                count = session.query(func.count(CacheEntry.id)).filter_by(cache_type=cache_type).scalar()
+                count = session.query(func.count(CacheEntry.id)).filter_by(cache_type=cache_type).scalar() or 0
                 if cache_type == 'schema':
                     stats['schemas_count'] = count
                 elif cache_type == 'llm':
@@ -292,24 +270,28 @@ class DatabaseCacheBackend:
                 elif cache_type == 'raw':
                     stats['raw_count'] = count
             
-            stats['total_cached_models'] = session.query(func.count(func.distinct(CacheEntry.model_id))).scalar()
-            stats['total_entries'] = session.query(func.count(CacheEntry.id)).scalar()
+            # Count unique models (by source_name + model_identifier combo)
+            stats['total_entries'] = session.query(func.count(CacheEntry.id)).scalar() or 0
             
-            # By source
-            sources = session.query(APISource).all()
-            for source in sources:
-                model_ids = [m.id for m in source.models]
-                if not model_ids:
-                    continue
+            # Count unique models per source
+            unique_models = session.query(
+                CacheEntry.source_name,
+                func.count(func.distinct(CacheEntry.model_identifier))
+            ).group_by(CacheEntry.source_name).all()
+            
+            total_models = 0
+            for source_name, model_count in unique_models:
+                total_models += model_count
                 
-                source_stats = {'models': len(model_ids), 'raw': 0, 'schemas': 0, 'playground': 0, 'llm_extractions': 0}
+                # Get detailed stats for this source
+                source_stats = {'models': model_count, 'raw': 0, 'schemas': 0, 'playground': 0, 'llm_extractions': 0}
                 
                 for cache_type in ['raw', 'schema', 'playground', 'llm']:
-                    count = (
-                        session.query(func.count(CacheEntry.id))
-                        .filter(CacheEntry.model_id.in_(model_ids), CacheEntry.cache_type == cache_type)
-                        .scalar()
-                    )
+                    count = session.query(func.count(CacheEntry.id)).filter_by(
+                        source_name=source_name,
+                        cache_type=cache_type
+                    ).scalar() or 0
+                    
                     if cache_type == 'schema':
                         source_stats['schemas'] = count
                     elif cache_type == 'llm':
@@ -319,11 +301,13 @@ class DatabaseCacheBackend:
                     elif cache_type == 'raw':
                         source_stats['raw'] = count
                 
-                stats['by_source'][source.name] = source_stats
+                stats['by_source'][source_name] = source_stats
+            
+            stats['total_cached_models'] = total_models
             
             return stats
         except Exception as e:
-            print(f"Error getting stats: {e}")
+            print(f"Error getting cache stats: {e}")
             return {'error': str(e)}
         finally:
             session.close()
@@ -332,16 +316,17 @@ class DatabaseCacheBackend:
 class CacheManager:
     """
     Unified cache manager that delegates to backend based on configuration.
+    Supports both file and database backends.
     """
     
     def __init__(self):
         """Initialize cache manager with configured backend"""
-        if CACHE_BACKEND == 'file':
-            self.backend = FileCacheBackend(CACHE_DIR)
-            print(f"Using file-based cache backend: {CACHE_DIR}")
-        else:
+        if CACHE_BACKEND == 'database':
             self.backend = DatabaseCacheBackend()
             print("Using database cache backend")
+        else:
+            self.backend = FileCacheBackend(CACHE_DIR)
+            print(f"Using file-based cache backend: {CACHE_DIR}")
     
     def save_raw_data(self, source_name: str, model_id: str, raw_data: Dict[str, Any]) -> None:
         """Save raw model data from API"""
