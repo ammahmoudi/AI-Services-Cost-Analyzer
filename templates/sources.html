@@ -195,9 +195,10 @@ function closeExtractDialog() {
     extractSourceId = null;
 }
 
-function showProgressDialog(sourceId, sourceName) {
+function showProgressDialog(sourceId, sourceName, taskId) {
     const modal = document.createElement('div');
     modal.id = 'progressModal';
+    modal.setAttribute('data-task-id', taskId);
     modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1001;';
     
     const modalContent = document.createElement('div');
@@ -233,20 +234,30 @@ function showProgressDialog(sourceId, sourceName) {
                 <div style="font-size: 0.75rem; color: #2563eb; margin-bottom: 0.25rem;">Updated Models</div>
                 <div style="font-size: 1.25rem; font-weight: bold; color: #2563eb;" id="updatedCount">0</div>
             </div>
-            <div style="background: #fef3c7; padding: 0.75rem; border-radius: 4px;">
-                <div style="font-size: 0.75rem; color: #d97706; margin-bottom: 0.25rem;">📦 Cached</div>
-                <div style="font-size: 1.25rem; font-weight: bold; color: #d97706;" id="cachedCount">0</div>
-            </div>
-            <div style="background: #fee2e2; padding: 0.75rem; border-radius: 4px;">
-                <div style="font-size: 0.75rem; color: #dc2626; margin-bottom: 0.25rem;">⚠️ Errors</div>
-                <div style="font-size: 1.25rem; font-weight: bold; color: #dc2626;" id="errorCount">0</div>
-            </div>
         </div>
         
         <div style="background: #f9fafb; padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem;">
             <div style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.25rem;">Current Model</div>
             <div style="font-size: 0.9rem; font-family: monospace;" id="currentModel">-</div>
         </div>
+        
+        <div id="errorMessage" style="background: #fee2e2; color: #dc2626; padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; display: none;">
+            <div style="font-weight: bold; margin-bottom: 0.25rem;">Error:</div>
+            <div id="errorText"></div>
+        </div>
+        
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+            <button class="btn" style="background: #dc2626;" id="cancelBtn" onclick="cancelExtraction(${taskId})">Cancel</button>
+            <button class="btn" style="background: #6b7280; display: none;" id="closeProgressBtn" onclick="closeProgressDialog()">Close</button>
+        </div>
+    `;
+    
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    
+    // Start polling for task progress
+    startProgressPolling(taskId);
+}
         
         <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.875rem; color: #6b7280; margin-bottom: 1rem;">
             <span id="speedInfo">-</span>
@@ -275,22 +286,106 @@ function closeProgressDialog() {
     if (modal) modal.remove();
 }
 
-function startProgressPolling(sourceId) {
+function startProgressPolling(taskId) {
     progressPollInterval = setInterval(() => {
-        fetch(`/api/extraction-progress/${sourceId}`)
+        fetch(`/api/tasks/${taskId}`)
             .then(response => response.json())
             .then(data => {
                 if (data.error) {
+                    clearInterval(progressPollInterval);
+                    progressPollInterval = null;
+                    document.getElementById('progressStatus').textContent = '❌ Error';
+                    document.getElementById('progressStatus').style.color = '#dc2626';
+                    document.getElementById('errorMessage').style.display = 'block';
+                    document.getElementById('errorText').textContent = data.error;
+                    document.getElementById('cancelBtn').style.display = 'none';
+                    document.getElementById('closeProgressBtn').style.display = 'block';
                     return;
                 }
                 
-                updateProgressUI(data);
+                // Update progress UI
+                const progress = data.progress || 0;
+                document.getElementById('progressBar').style.width = progress + '%';
+                document.getElementById('progressPercent').textContent = progress + '%';
                 
-                if (data.status === 'complete' || data.status === 'error') {
+                // Update counts
+                document.getElementById('processedCount').textContent = data.processed_models || 0;
+                document.getElementById('totalCount').textContent = data.total_models || 0;
+                document.getElementById('newCount').textContent = data.new_models || 0;
+                document.getElementById('updatedCount').textContent = data.updated_models || 0;
+                
+                // Update current model
+                document.getElementById('currentModel').textContent = data.current_model || '-';
+                
+                // Update status
+                const statusMap = {
+                    'pending': '⏳ Pending...',
+                    'running': '🔄 Extracting...',
+                    'completed': '✅ Complete!',
+                    'failed': '❌ Failed',
+                    'cancelled': '🚫 Cancelled'
+                };
+                document.getElementById('progressStatus').textContent = statusMap[data.status] || data.status;
+                
+                // Handle completion
+                if (data.status === 'completed') {
                     clearInterval(progressPollInterval);
                     progressPollInterval = null;
-                    
+                    document.getElementById('progressStatus').style.color = '#059669';
+                    document.getElementById('cancelBtn').style.display = 'none';
                     document.getElementById('closeProgressBtn').style.display = 'block';
+                    
+                    // Auto-close and reload after 2 seconds
+                    setTimeout(() => {
+                        closeProgressDialog();
+                        window.location.reload();
+                    }, 2000);
+                } else if (data.status === 'failed') {
+                    clearInterval(progressPollInterval);
+                    progressPollInterval = null;
+                    document.getElementById('progressStatus').style.color = '#dc2626';
+                    document.getElementById('errorMessage').style.display = 'block';
+                    document.getElementById('errorText').textContent = data.error_message || 'Unknown error';
+                    document.getElementById('cancelBtn').style.display = 'none';
+                    document.getElementById('closeProgressBtn').style.display = 'block';
+                } else if (data.status === 'cancelled') {
+                    clearInterval(progressPollInterval);
+                    progressPollInterval = null;
+                    document.getElementById('progressStatus').style.color = '#f59e0b';
+                    document.getElementById('cancelBtn').style.display = 'none';
+                    document.getElementById('closeProgressBtn').style.display = 'block';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching task status:', error);
+            });
+    }, 1000); // Poll every second
+}
+
+function cancelExtraction(taskId) {
+    if (!confirm('Are you sure you want to cancel this extraction?')) {
+        return;
+    }
+    
+    fetch(`/api/tasks/${taskId}/cancel`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('progressStatus').textContent = '🚫 Cancelling...';
+            document.getElementById('progressStatus').style.color = '#f59e0b';
+            document.getElementById('cancelBtn').disabled = true;
+            document.getElementById('cancelBtn').textContent = 'Cancelling...';
+        } else {
+            alert(data.message || 'Failed to cancel extraction');
+        }
+    })
+    .catch(error => {
+        console.error('Error cancelling extraction:', error);
+        alert('Error cancelling extraction: ' + error);
+    });
+}
                     
                     if (data.status === 'complete') {
                         document.getElementById('progressStatus').textContent = '✅ Complete!';
@@ -310,34 +405,6 @@ function startProgressPolling(sourceId) {
                 console.error('Progress polling error:', error);
             });
     }, 500);  // Poll every 500ms
-}
-
-function updateProgressUI(data) {
-    const percent = data.total_models > 0 ? Math.round((data.processed_models / data.total_models) * 100) : 0;
-    
-    document.getElementById('progressBar').style.width = percent + '%';
-    document.getElementById('progressPercent').textContent = percent + '%';
-    document.getElementById('processedCount').textContent = data.processed_models;
-    document.getElementById('totalCount').textContent = data.total_models;
-    document.getElementById('newCount').textContent = data.new_models || 0;
-    document.getElementById('updatedCount').textContent = data.updated_models || 0;
-    document.getElementById('cachedCount').textContent = data.cached_count || 0;
-    document.getElementById('errorCount').textContent = data.error_count || 0;
-    
-    if (data.current_model_name) {
-        document.getElementById('currentModel').textContent = data.current_model_name;
-        document.getElementById('progressStatus').textContent = `Processing: ${data.current_model_name.substring(0, 40)}...`;
-    }
-    
-    if (data.models_per_second > 0) {
-        document.getElementById('speedInfo').textContent = `⚡ ${data.models_per_second.toFixed(2)} models/sec`;
-    }
-    
-    if (data.elapsed_seconds > 0) {
-        const elapsed = Math.round(data.elapsed_seconds);
-        const remaining = Math.round(data.estimated_remaining_seconds || 0);
-        document.getElementById('timeInfo').textContent = `⏱️ ${elapsed}s elapsed, ~${remaining}s remaining`;
-    }
 }
 
 function extractWithOptions() {
@@ -360,11 +427,9 @@ function extractWithOptions() {
         return;
     }
     
-    // Show progress dialog
-    showProgressDialog(sourceId, sourceName);
-    
     console.log('Fetching:', `/sources/${sourceId}/extract`);
     
+    // Start extraction task
     fetch(`/sources/${sourceId}/extract`, {
         method: 'POST',
         headers: {
@@ -382,15 +447,21 @@ function extractWithOptions() {
     })
     .then(data => {
         console.log('Response data:', data);
-        if (!data.success && data.error) {
+        if (data.error) {
             alert('Error: ' + data.error);
-            closeProgressDialog();
+            return;
+        }
+        
+        // Show progress dialog with task tracking
+        if (data.task_id) {
+            showProgressDialog(sourceId, sourceName, data.task_id);
+        } else {
+            alert('Extraction started but no task ID received');
         }
     })
     .catch(error => {
         console.error('Fetch error:', error);
         alert('Error: ' + error);
-        closeProgressDialog();
     });
 }
 

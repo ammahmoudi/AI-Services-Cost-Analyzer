@@ -198,3 +198,30 @@ class ModelMatch(Base):
     
     def __repr__(self):
         return f"<ModelMatch(canonical_id={self.canonical_model_id}, model_id={self.ai_model_id}, confidence={self.confidence})>"
+
+
+class ExtractionTask(Base):
+    """Tracks background extraction jobs"""
+    __tablename__ = 'extraction_tasks'
+    
+    id = Column(Integer, primary_key=True)
+    source_id = Column(Integer, ForeignKey('api_sources.id'), nullable=False)
+    status = Column(String(20), default='pending')  # pending, running, completed, failed, cancelled
+    progress = Column(Integer, default=0)  # 0-100
+    total_models = Column(Integer, default=0)
+    processed_models = Column(Integer, default=0)
+    new_models = Column(Integer, default=0)
+    updated_models = Column(Integer, default=0)
+    current_model = Column(String(200), nullable=True)
+    error_message = Column(Text, nullable=True)
+    use_llm = Column(Boolean, default=False)
+    fetch_schemas = Column(Boolean, default=False)
+    force_refresh = Column(Boolean, default=False)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relationship
+    source = relationship('APISource')
+    
+    def __repr__(self):
+        return f"<ExtractionTask(id={self.id}, source_id={self.source_id}, status='{self.status}', progress={self.progress}%)>"

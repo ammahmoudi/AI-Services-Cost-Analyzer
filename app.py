@@ -8,7 +8,7 @@ import json
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from dotenv import load_dotenv
 from ai_cost_manager.database import get_session, close_session, init_db
-from ai_cost_manager.models import APISource, AIModel, LLMConfiguration, AuthSettings, ExtractorAPIKey
+from ai_cost_manager.models import APISource, AIModel, LLMConfiguration, AuthSettings, ExtractorAPIKey, ExtractionTask
 from ai_cost_manager.openrouter_client import fetch_openrouter_models, get_recommended_models
 from extractors import get_extractor, list_extractors
 from datetime import datetime
@@ -173,7 +173,9 @@ def get_source_features(source_id):
 
 @app.route('/sources/<int:source_id>/extract', methods=['POST'])
 def extract_source(source_id):
-    """Extract data from a specific source"""
+    """Start a background extraction task for a specific source"""
+    from threading import Thread
+    from ai_cost_manager.models import ExtractionTask
     from ai_cost_manager.progress_tracker import ProgressTracker
     
     session = get_session()
@@ -183,120 +185,183 @@ def extract_source(source_id):
         if not source:
             return jsonify({'error': 'Source not found'}), 404
         
-        # Store source attributes we need before potentially detaching
-        source_name = source.name
-        source_url = source.url
-        source_extractor_name = source.extractor_name
-        source_db_id = source.id
-        
         # Get options from request
         use_llm = request.json.get('use_llm', False) if request.is_json else False
         fetch_schemas = request.json.get('fetch_schemas', False) if request.is_json else False
         force_refresh = request.json.get('force_refresh', False) if request.is_json else False
         
-        # Create progress tracker
-        progress_tracker = ProgressTracker(source_name, source_db_id)
+        # Check if there's already a running task for this source
+        existing_task = session.query(ExtractionTask).filter(
+            ExtractionTask.source_id == source_id,
+            ExtractionTask.status.in_(['pending', 'running'])
+        ).first()
         
-        # Get extractor class and instantiate it
-        extractor_class = get_extractor(source_extractor_name)
-        extractor = extractor_class(source_url=source_url, fetch_schemas=fetch_schemas, use_llm=use_llm)
-        
-        # Enable force refresh if requested
-        if force_refresh and hasattr(extractor, 'force_refresh'):
-            extractor.force_refresh = True
-        
-        if use_llm and hasattr(extractor, 'use_llm'):
-            extractor.use_llm = True
-        
-        if force_refresh and hasattr(extractor, 'force_refresh'):
-            extractor.force_refresh = True
-        
-        # Extract models with progress tracking
-        models_data = extractor.extract(progress_tracker=progress_tracker)
-        
-        if not models_data:
-            if progress_tracker:
-                progress_tracker.error('No models extracted - API may be unavailable or returned empty response')
+        if existing_task:
             return jsonify({
-                'error': 'No models extracted. The API may be temporarily unavailable or returned no data. Please try again later.',
-                'success': False
-            }), 400
+                'task_id': existing_task.id,
+                'status': existing_task.status,
+                'message': 'Extraction already in progress',
+                'already_running': True
+            })
         
-        # Save models incrementally with batching for better resilience
-        new_count = 0
-        updated_count = 0
-        batch_size = 10  # Commit every 10 models to prevent data loss
-        batch_count = 0
+        # Create new extraction task
+        task = ExtractionTask(
+            source_id=source_id,
+            status='pending',
+            use_llm=use_llm,
+            fetch_schemas=fetch_schemas,
+            force_refresh=force_refresh,
+            started_at=datetime.utcnow()
+        )
+        session.add(task)
+        session.commit()
+        task_id = task.id
         
-        for model_data in models_data:
+        # Start extraction in background thread
+        def run_extraction():
+            from ai_cost_manager.database import get_session, close_session
+            thread_session = get_session()
+            
             try:
-                # Remove keys that aren't columns in the model
-                filtered_data = {
-                    k: v for k, v in model_data.items()
-                    if hasattr(AIModel, k)
-                }
+                # Get task and source in this thread's session
+                task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
+                source = thread_session.query(APISource).filter_by(id=source_id).first()
                 
-                existing_model = session.query(AIModel).filter_by(
-                    source_id=source_db_id,
-                    model_id=model_data['model_id']
-                ).first()
+                if not task or not source:
+                    return
                 
-                if existing_model:
-                    for key, value in filtered_data.items():
-                        if key != 'id':  # Don't update the primary key
-                            setattr(existing_model, key, value)
-                    updated_count += 1
-                    progress_tracker.increment_updated()
-                else:
-                    model = AIModel(source_id=source_db_id, **filtered_data)
-                    session.add(model)
-                    new_count += 1
-                    progress_tracker.increment_new()
+                # Update task status to running
+                task.status = 'running'
+                task.progress = 0
+                thread_session.commit()
                 
-                batch_count += 1
+                # Store source attributes we need
+                source_name = source.name
+                source_url = source.url
+                source_extractor_name = source.extractor_name
+                source_db_id = source.id
                 
-                # Commit in batches to prevent data loss on failure
-                if batch_count >= batch_size:
-                    session.commit()
-                    batch_count = 0
+                # Create progress tracker
+                progress_tracker = ProgressTracker(source_name, source_db_id)
+                
+                # Get extractor class and instantiate it
+                extractor_class = get_extractor(source_extractor_name)
+                extractor = extractor_class(
+                    source_url=source_url,
+                    fetch_schemas=fetch_schemas,
+                    use_llm=use_llm
+                )
+                
+                if force_refresh and hasattr(extractor, 'force_refresh'):
+                    extractor.force_refresh = True
+                
+                # Extract models with progress tracking
+                models_data = extractor.extract(progress_tracker=progress_tracker)
+                
+                if not models_data:
+                    task.status = 'failed'
+                    task.error_message = 'No models extracted - API may be unavailable'
+                    task.completed_at = datetime.utcnow()
+                    thread_session.commit()
+                    return
+                
+                task.total_models = len(models_data)
+                thread_session.commit()
+                
+                # Save models incrementally
+                new_count = 0
+                updated_count = 0
+                batch_size = 10
+                batch_count = 0
+                
+                for idx, model_data in enumerate(models_data):
+                    # Check if task was cancelled
+                    thread_session.refresh(task)
+                    if task.status == 'cancelled':
+                        task.error_message = 'Extraction cancelled by user'
+                        task.completed_at = datetime.utcnow()
+                        thread_session.commit()
+                        return
                     
-            except Exception as model_error:
-                # Log the error but continue with other models
-                error_msg = f"Error saving model {model_data.get('model_id', 'unknown')}: {str(model_error)}"
-                if progress_tracker:
-                    progress_tracker.log(error_msg)
-                print(f"Warning: {error_msg}")
-                session.rollback()
-                batch_count = 0  # Reset batch after rollback
-                continue
+                    try:
+                        filtered_data = {
+                            k: v for k, v in model_data.items()
+                            if hasattr(AIModel, k)
+                        }
+                        
+                        existing_model = thread_session.query(AIModel).filter_by(
+                            source_id=source_db_id,
+                            model_id=model_data['model_id']
+                        ).first()
+                        
+                        if existing_model:
+                            for key, value in filtered_data.items():
+                                if key != 'id':
+                                    setattr(existing_model, key, value)
+                            updated_count += 1
+                        else:
+                            model = AIModel(source_id=source_db_id, **filtered_data)
+                            thread_session.add(model)
+                            new_count += 1
+                        
+                        batch_count += 1
+                        
+                        # Update task progress
+                        task.processed_models = idx + 1
+                        task.new_models = new_count
+                        task.updated_models = updated_count
+                        task.current_model = model_data.get('name', 'Unknown')
+                        task.progress = int((idx + 1) / len(models_data) * 100)
+                        
+                        # Commit in batches
+                        if batch_count >= batch_size:
+                            thread_session.commit()
+                            batch_count = 0
+                            
+                    except Exception as model_error:
+                        print(f"Warning: Error saving model {model_data.get('model_id', 'unknown')}: {str(model_error)}")
+                        thread_session.rollback()
+                        batch_count = 0
+                        continue
+                
+                # Commit remaining models
+                if batch_count > 0:
+                    thread_session.commit()
+                
+                # Update source last_extracted timestamp
+                source = thread_session.query(APISource).filter_by(id=source_db_id).first()
+                if source:
+                    source.last_extracted = datetime.utcnow()
+                
+                # Mark task as completed
+                task.status = 'completed'
+                task.progress = 100
+                task.completed_at = datetime.utcnow()
+                thread_session.commit()
+                
+            except Exception as e:
+                task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
+                if task:
+                    task.status = 'failed'
+                    task.error_message = str(e)
+                    task.completed_at = datetime.utcnow()
+                    thread_session.commit()
+            finally:
+                close_session()
         
-        # Commit any remaining models in the last batch
-        if batch_count > 0:
-            session.commit()
-        
-        # Re-query source again to update last extracted timestamp
-        source = session.query(APISource).filter_by(id=source_db_id).first()
-        if source:
-            source.last_extracted = datetime.utcnow()
-            session.commit()
-            # Refresh the source to ensure the timestamp is persisted
-            session.refresh(source)
-        else:
-            session.commit()
-        
-        flash(f'Extracted {len(models_data)} models ({new_count} new, {updated_count} updated)', 'success')
+        # Start background thread
+        thread = Thread(target=run_extraction, daemon=True)
+        thread.start()
         
         return jsonify({
             'success': True,
-            'total': len(models_data),
-            'new': new_count,
-            'updated': updated_count
+            'task_id': task_id,
+            'status': 'pending',
+            'message': 'Extraction started in background'
         })
         
     except Exception as e:
         session.rollback()
-        if 'progress_tracker' in locals():
-            progress_tracker.error(str(e))
         return jsonify({'error': str(e)}), 500
     finally:
         close_session()
@@ -1022,6 +1087,73 @@ def get_extraction_progress(source_id):
         return jsonify(progress)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tasks/<int:task_id>', methods=['GET'])
+def get_task_status(task_id):
+    """Get the status of an extraction task"""
+    from ai_cost_manager.models import ExtractionTask
+    
+    session = get_session()
+    try:
+        task = session.query(ExtractionTask).filter_by(id=task_id).first()
+        
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        return jsonify({
+            'task_id': task.id,
+            'source_id': task.source_id,
+            'source_name': task.source.name if task.source else 'Unknown',
+            'status': task.status,
+            'progress': task.progress,
+            'total_models': task.total_models,
+            'processed_models': task.processed_models,
+            'new_models': task.new_models,
+            'updated_models': task.updated_models,
+            'current_model': task.current_model,
+            'error_message': task.error_message,
+            'started_at': task.started_at.isoformat() if task.started_at else None,
+            'completed_at': task.completed_at.isoformat() if task.completed_at else None,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/tasks/<int:task_id>/cancel', methods=['POST'])
+def cancel_task(task_id):
+    """Cancel a running extraction task"""
+    from ai_cost_manager.models import ExtractionTask
+    
+    session = get_session()
+    try:
+        task = session.query(ExtractionTask).filter_by(id=task_id).first()
+        
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+        
+        if task.status in ['completed', 'failed', 'cancelled']:
+            return jsonify({
+                'success': False,
+                'message': f'Task already {task.status}'
+            })
+        
+        # Mark task as cancelled (the background thread will check this)
+        task.status = 'cancelled'
+        task.completed_at = datetime.utcnow()
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Task cancelled successfully'
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
 
 
 @app.route('/cache/clear-llm', methods=['POST'])
