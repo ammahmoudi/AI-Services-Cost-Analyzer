@@ -4,10 +4,10 @@ LLM Pricing Extractor
 Uses LLM (via OpenRouter) to intelligently extract and parse pricing information.
 """
 import json
-import requests
 from typing import Dict, Any, Optional
 from ai_cost_manager.database import get_session
 from ai_cost_manager.models import LLMConfiguration
+from ai_cost_manager.llm_client import LLMClient
 
 
 class LLMPricingExtractor:
@@ -39,19 +39,15 @@ class LLMPricingExtractor:
         """
         if not self.config:
             return self._fallback_extraction(model_data)
-        
+
         # Build prompt
         prompt = self._build_prompt(model_data)
-        
+
         try:
-            # Call LLM
-            response = self._call_llm(prompt)
-            
-            # Parse response
-            result = self._parse_llm_response(response)
-            
+            llm_client = LLMClient(self.config)
+            response = llm_client.chat(prompt, temperature=0.1, max_tokens=500)
+            result = llm_client.parse_response(response)
             return result
-            
         except Exception as e:
             print(f"  LLM extraction failed: {e}")
             return self._fallback_extraction(model_data)
@@ -196,69 +192,7 @@ CRITICAL RULES:
         
         return prompt
     
-    def _call_llm(self, prompt: str) -> str:
-        """Call OpenRouter API"""
-        headers = {
-            'Authorization': f'Bearer {self.config.api_key}',
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://github.com/ai-cost-manager',
-        }
-        
-        data = {
-            'model': self.config.model_name,
-            'messages': [
-                {
-                    'role': 'user',
-                    'content': prompt
-                }
-            ],
-            'temperature': 0.1,  # Low temperature for consistent extraction
-            'max_tokens': 500,
-        }
-        
-        response = requests.post(
-            f'{self.config.base_url}/chat/completions',
-            headers=headers,
-            json=data,
-            timeout=60  # Increased from 30s to prevent timeouts with complex prompts
-        )
-        
-        # Handle rate limiting and server errors
-        if response.status_code == 429:
-            raise Exception("Rate limit exceeded. Please wait before making more requests.")
-        elif response.status_code == 500:
-            raise Exception("OpenRouter server error. The API may be experiencing issues.")
-        elif response.status_code >= 400:
-            raise Exception(f"HTTP {response.status_code}: {response.text[:200]}")
-        
-        response.raise_for_status()
-        
-        result = response.json()
-        content = result['choices'][0]['message']['content']
-        
-        return content
-    
-    def _parse_llm_response(self, response: str) -> Dict[str, Any]:
-        """Parse LLM response into structured data"""
-        # Clean response (remove markdown code blocks if present)
-        response = response.strip()
-        if response.startswith('```'):
-            lines = response.split('\n')
-            response = '\n'.join(lines[1:-1])
-        if response.startswith('```json'):
-            response = response[7:]
-        
-        # Parse JSON
-        try:
-            data = json.loads(response)
-            return data
-        except json.JSONDecodeError:
-            # Try to extract JSON from text
-            import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group())
-            raise
+    # _call_llm and _parse_llm_response are now handled by LLMClient
     
     def _fallback_extraction(self, model_data: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback extraction without LLM"""

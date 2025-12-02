@@ -1473,7 +1473,13 @@ def get_model_with_alternatives(model_id):
 @app.route('/api/canonical-models', methods=['GET'])
 def get_canonical_models():
     """Get all canonical models with provider details"""
-    from ai_cost_manager.model_matching_service import ModelMatchingService
+    try:
+        from ai_cost_manager.model_matching_service import ModelMatchingService
+    except ImportError as e:
+        return jsonify({
+            'error': f'Model matching feature not available: {str(e)}. Please install required dependencies: pip install openai',
+            'models': []
+        }), 500
     
     session = get_session()
     try:
@@ -1488,7 +1494,10 @@ def get_canonical_models():
         })
     
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error in get_canonical_models: {error_details}")
+        return jsonify({'error': str(e), 'models': []}), 500
     finally:
         close_session()
 

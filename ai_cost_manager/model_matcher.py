@@ -5,11 +5,12 @@ This module helps connect models that are the same underlying model but offered
 through different providers (e.g., Flux Dev on Replicate vs FAL vs Runware)
 """
 
-import os
-from typing import List, Dict, Optional, Set, Tuple
+from typing import List, Dict, Optional, Any
 import json
 from dataclasses import dataclass
-from openai import OpenAI
+from ai_cost_manager.llm_client import LLMClient
+from ai_cost_manager.database import get_session
+from ai_cost_manager.models import LLMConfiguration
 
 
 @dataclass
@@ -34,12 +35,18 @@ class ModelMatch:
         )
 
 
+
+
 class ModelMatcher:
-    """Matches models across different providers using LLM"""
-    
-    def __init__(self, llm_api_key: Optional[str] = None):
-        self.llm_api_key = llm_api_key or os.getenv("OPENAI_API_KEY")
-        self.client = OpenAI(api_key=self.llm_api_key) if self.llm_api_key else None
+    """Matches models across different providers using LLM (OpenRouter or OpenAI via unified config)"""
+
+    def __init__(self):
+        # Load active LLM configuration directly
+        session = get_session()
+        try:
+            self.config = session.query(LLMConfiguration).filter_by(is_active=True).first()
+        finally:
+            session.close()
         self.match_cache = {}  # Cache for model matches
         
     def normalize_model_name(self, model_name: str) -> str:
@@ -63,7 +70,7 @@ class ModelMatcher:
         
         return normalized.strip()
     
-    def extract_model_features(self, model: Dict) -> Dict[str, any]:
+    def extract_model_features(self, model: Dict) -> Dict[str, Any]:
         """Extract key features from model for matching"""
         return {
             'name': model.get('name', ''),
@@ -78,18 +85,12 @@ class ModelMatcher:
     
     def match_models_with_llm(self, models: List[Dict]) -> List[ModelMatch]:
         """
-        Use LLM to match models across providers
-        
-        Args:
-            models: List of model dictionaries from different providers
-            
-        Returns:
-            List of ModelMatch objects grouping same models together
+        Use LLM to match models across providers using unified LLM config (OpenRouter or OpenAI)
         """
-        if not self.client:
-            print("Warning: No LLM API key provided, using basic matching")
+        if not self.config:
+            print("Warning: No active LLM configuration, using basic matching")
             return self._match_models_basic(models)
-        
+
         # Group by model type first for efficiency
         by_type = {}
         for model in models:
@@ -97,9 +98,9 @@ class ModelMatcher:
             if model_type not in by_type:
                 by_type[model_type] = []
             by_type[model_type].append(model)
-        
+
         all_matches = []
-        
+
         # Process each type separately
         for model_type, type_models in by_type.items():
             if len(type_models) < 2:
@@ -111,7 +112,7 @@ class ModelMatcher:
                         models=[model]
                     ))
                 continue
-            
+
             # Build context for LLM
             model_summaries = []
             for i, model in enumerate(type_models):
@@ -125,11 +126,11 @@ class ModelMatcher:
                     'tags': features['tags'][:5] if features['tags'] else [],
                 }
                 model_summaries.append(summary)
-            
-            # Call LLM to identify matches
+
+            # Call LLM to identify matches using the unified LLM client
             try:
-                matches = self._llm_match_request(model_type, model_summaries)
-                
+                matches = self._llm_match_request_unified(model_type, model_summaries)
+
                 # Build ModelMatch objects
                 for match_group in matches:
                     matched_models = [type_models[i] for i in match_group['indices']]
@@ -142,12 +143,11 @@ class ModelMatcher:
                 print(f"LLM matching failed for {model_type}: {e}")
                 # Fallback to basic matching
                 all_matches.extend(self._match_models_basic(type_models))
-        
+
         return all_matches
-    
-    def _llm_match_request(self, model_type: str, model_summaries: List[Dict]) -> List[Dict]:
-        """Make LLM request to match models"""
-        
+
+    def _llm_match_request_unified(self, model_type: str, model_summaries: List[Dict]) -> List[Dict]:
+        """Make LLM request to match models using the shared LLMClient utility"""
         prompt = f"""You are an AI model expert. I have a list of {model_type} models from different providers.
 Some of these models are actually the same underlying model offered by different providers.
 
@@ -161,44 +161,33 @@ Rules:
 2. Check provider - different providers often offer the same open-source models
 3. Look at descriptions for clues about the underlying model
 4. Common examples:
-   - "FLUX.1 Dev" / "Flux Dev" / "flux-dev-1.0" → Same model
-   - "SDXL 1.0" / "Stable Diffusion XL" / "sdxl-base-1.0" → Same model
-   - "GPT-4" / "GPT-4-0613" / "gpt-4-turbo" → Different models (different versions)
+     - "FLUX.1 Dev" / "Flux Dev" / "flux-dev-1.0" → Same model
+     - "SDXL 1.0" / "Stable Diffusion XL" / "sdxl-base-1.0" → Same model
+     - "GPT-4" / "GPT-4-0613" / "gpt-4-turbo" → Different models (different versions)
 
 Return ONLY a JSON array of match groups:
 [
-  {{
-    "canonical_name": "flux-dev-1.0",
-    "indices": [0, 3, 7],
-    "confidence": 0.95,
-    "reasoning": "All are FLUX.1 Dev model"
-  }},
-  {{
-    "canonical_name": "sdxl-1.0",
-    "indices": [1, 5],
-    "confidence": 0.9,
-    "reasoning": "Both are SDXL 1.0"
-  }}
+    {{
+        "canonical_name": "flux-dev-1.0",
+        "indices": [0, 3, 7],
+        "confidence": 0.95,
+        "reasoning": "All are FLUX.1 Dev model"
+    }},
+    {{
+        "canonical_name": "sdxl-1.0",
+        "indices": [1, 5],
+        "confidence": 0.9,
+        "reasoning": "Both are SDXL 1.0"
+    }}
 ]
 
 Only group models you're confident are the same (confidence > 0.8).
 Models not in any group will be treated as unique.
 """
-
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": "You are an expert at identifying equivalent AI models across different providers. Return only valid JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                response_format={"type": "json_object"}
-            )
-            
-            result = response.choices[0].message.content
-            parsed = json.loads(result)
-            
+            llm_client = LLMClient(self.config)
+            response = llm_client.chat(prompt, temperature=0.3, max_tokens=800)
+            parsed = llm_client.parse_response(response)
             # Handle different response formats
             if isinstance(parsed, dict) and 'matches' in parsed:
                 return parsed['matches']
@@ -209,7 +198,6 @@ Models not in any group will be treated as unique.
             else:
                 print(f"Unexpected LLM response format: {parsed}")
                 return []
-                
         except Exception as e:
             print(f"LLM request failed: {e}")
             raise
