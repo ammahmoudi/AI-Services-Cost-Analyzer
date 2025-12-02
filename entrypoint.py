@@ -101,11 +101,13 @@ def start_application():
     print("🚀 Starting application...")
     
     # Run with gunicorn for production
+    # Increased timeout to 180s to accommodate LLM API calls (30s timeout + overhead)
     subprocess.run([
         'gunicorn',
         '--bind', '0.0.0.0:5000',
         '--workers', '4',
-        '--timeout', '120',
+        '--timeout', '180',
+        '--graceful-timeout', '30',
         '--access-logfile', '-',
         '--error-logfile', '-',
         'app:app'

@@ -4,15 +4,25 @@ LLM Client Utility
 Provides unified chat/completion endpoint logic for OpenRouter and OpenAI-compatible APIs.
 """
 import requests
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from ai_cost_manager.models import LLMConfiguration
 
 class LLMClient:
     def __init__(self, config: LLMConfiguration):
         self.config = config
 
-    def chat(self, prompt: str, temperature: float = 0.1, max_tokens: int = 500) -> str:
-        """Send a chat/completion request to the configured LLM endpoint."""
+    def chat(self, prompt: str, temperature: float = 0.1, max_tokens: int = 500, timeout: int = 30) -> str:
+        """Send a chat/completion request to the configured LLM endpoint.
+        
+        Args:
+            prompt: The prompt to send to the LLM
+            temperature: Sampling temperature (0.0 to 1.0)
+            max_tokens: Maximum tokens in the response
+            timeout: Request timeout in seconds (default: 30)
+            
+        Raises:
+            Exception: On API errors, timeouts, or network issues
+        """
         if not self.config:
             raise Exception("No active LLM configuration.")
 
@@ -30,12 +40,21 @@ class LLMClient:
             'temperature': temperature,
             'max_tokens': max_tokens,
         }
-        response = requests.post(
-            f'{self.config.base_url}/chat/completions',
-            headers=headers,
-            json=data,
-            timeout=60
-        )
+        
+        try:
+            response = requests.post(
+                f'{self.config.base_url}/chat/completions',
+                headers=headers,
+                json=data,
+                timeout=timeout
+            )
+        except requests.Timeout:
+            raise Exception(f"LLM API request timed out after {timeout} seconds. The API may be slow or unresponsive.")
+        except requests.ConnectionError:
+            raise Exception("Failed to connect to LLM API. Check your network connection and API endpoint.")
+        except requests.RequestException as e:
+            raise Exception(f"LLM API request failed: {str(e)}")
+        
         if response.status_code == 429:
             raise Exception("Rate limit exceeded. Please wait before making more requests.")
         elif response.status_code == 500:
@@ -43,8 +62,14 @@ class LLMClient:
         elif response.status_code >= 400:
             raise Exception(f"HTTP {response.status_code}: {response.text[:200]}")
         response.raise_for_status()
-        result = response.json()
-        return result['choices'][0]['message']['content']
+        
+        try:
+            result = response.json()
+            return result['choices'][0]['message']['content']
+        except (KeyError, IndexError) as e:
+            raise Exception(f"Unexpected LLM API response format: {str(e)}")
+        except ValueError:
+            raise Exception(f"Invalid JSON in LLM API response: {response.text[:200]}")
 
     @staticmethod
     def parse_response(response: str) -> Dict[str, Any]:
