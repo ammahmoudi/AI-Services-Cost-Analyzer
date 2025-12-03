@@ -266,6 +266,7 @@ def extract_source(source_id):
                     return
                 
                 task.total_models = len(models_data)
+                task.status = 'running'  # Mark task as running
                 thread_session.commit()
                 
                 # Save models incrementally
@@ -314,22 +315,24 @@ def extract_source(source_id):
                         current_task.current_model = model_data.get('name', 'Unknown')
                         current_task.progress = int((idx + 1) / len(models_data) * 100)
                         
-                        # Commit in batches
+                        # Commit progress every model (lightweight update)
+                        thread_session.commit()
+                        
+                        # Reset batch counter when we hit batch size
                         if batch_count >= batch_size:
-                            thread_session.commit()
                             batch_count = 0
                             
                     except Exception as model_error:
                         print(f"Warning: Error saving model {model_data.get('model_id', 'unknown')}: {str(model_error)}")
                         thread_session.rollback()
                         batch_count = 0
-                        # Re-query task after rollback
+                        # Re-query both task and current_task after rollback
                         task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
+                        current_task = task
                         continue
                 
-                # Commit remaining models
-                if batch_count > 0:
-                    thread_session.commit()
+                # Final commit (in case last model wasn't committed yet)
+                thread_session.commit()
                 
                 # Re-query task and source for final update
                 task = thread_session.query(ExtractionTask).filter_by(id=task_id).first()
