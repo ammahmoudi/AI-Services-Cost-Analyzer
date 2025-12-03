@@ -11,6 +11,9 @@
             <button onclick="window.location.href='/models'" class="btn" style="background: #6b7280;">
                 📋 By Provider View
             </button>
+            <button onclick="showCreateCanonicalModal()" class="btn" style="background: #10b981;">
+                ➕ Create New
+            </button>
             <button id="runMatchingBtn" onclick="runModelMatching()" class="btn" style="background: #10b981;">
                 🤖 Run Model Matching
             </button>
@@ -55,6 +58,136 @@
     
     <!-- Models Grid -->
     <div id="modelsGrid" style="display: none;"></div>
+</div>
+
+<!-- Edit Canonical Model Modal -->
+<div id="editCanonicalModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+        <h3 style="margin: 0 0 1.5rem 0;">✏️ Edit Unified Model</h3>
+        <form id="editCanonicalForm" onsubmit="saveCanonicalModel(event)">
+            <input type="hidden" id="editCanonicalId">
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Canonical Name *</label>
+                <input type="text" id="editCanonicalName" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <small style="color: #6b7280;">Internal identifier (e.g., flux-dev-1.0)</small>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Display Name *</label>
+                <input type="text" id="editDisplayName" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <small style="color: #6b7280;">User-friendly name</small>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Description</label>
+                <textarea id="editCanonicalDescription" rows="3" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Model Type</label>
+                <select id="editCanonicalType" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">Select type...</option>
+                    <option value="text-generation">text-generation</option>
+                    <option value="image-generation">image-generation</option>
+                    <option value="video-generation">video-generation</option>
+                    <option value="audio-generation">audio-generation</option>
+                    <option value="3d-generation">3d-generation</option>
+                    <option value="embeddings">embeddings</option>
+                    <option value="code-generation">code-generation</option>
+                    <option value="reranking">reranking</option>
+                    <option value="moderation">moderation</option>
+                    <option value="search">search</option>
+                    <option value="other">other</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Tags (comma-separated)</label>
+                <input type="text" id="editCanonicalTags" placeholder="image, ai, generation" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" class="btn" style="flex: 1; background: #10b981;">💾 Save Changes</button>
+                <button type="button" onclick="closeEditCanonicalModal()" class="btn" style="flex: 1; background: #6b7280;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Model to Canonical Modal -->
+<div id="addModelCanonicalModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 500px; width: 90%;">
+        <h3 style="margin: 0 0 1.5rem 0;">➕ Add Model to Unified Model</h3>
+        <form id="addModelForm" onsubmit="addModelToCanonical(event)">
+            <input type="hidden" id="addModelCanonicalId">
+            
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Select Model *</label>
+                <select id="addModelSelect" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">Loading models...</option>
+                </select>
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" class="btn" style="flex: 1; background: #10b981;">➕ Add Model</button>
+                <button type="button" onclick="closeAddModelModal()" class="btn" style="flex: 1; background: #6b7280;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Create Canonical Model Modal -->
+<div id="createCanonicalModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+        <h3 style="margin: 0 0 1.5rem 0;">➕ Create New Unified Model</h3>
+        <form id="createCanonicalForm" onsubmit="createCanonicalModel(event)">
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Canonical Name *</label>
+                <input type="text" id="createCanonicalName" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <small style="color: #6b7280;">Internal identifier (e.g., flux-dev-1.0)</small>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Display Name *</label>
+                <input type="text" id="createDisplayName" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <small style="color: #6b7280;">User-friendly name</small>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Description</label>
+                <textarea id="createCanonicalDescription" rows="3" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Model Type</label>
+                <select id="createCanonicalType" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">Select type...</option>
+                    <option value="text-generation">text-generation</option>
+                    <option value="image-generation">image-generation</option>
+                    <option value="video-generation">video-generation</option>
+                    <option value="audio-generation">audio-generation</option>
+                    <option value="3d-generation">3d-generation</option>
+                    <option value="embeddings">embeddings</option>
+                    <option value="code-generation">code-generation</option>
+                    <option value="reranking">reranking</option>
+                    <option value="moderation">moderation</option>
+                    <option value="search">search</option>
+                    <option value="other">other</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Tags (comma-separated)</label>
+                <input type="text" id="createCanonicalTags" placeholder="image, ai, generation" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" class="btn" style="flex: 1; background: #10b981;">➕ Create Model</button>
+                <button type="button" onclick="closeCreateCanonicalModal()" class="btn" style="flex: 1; background: #6b7280;">Cancel</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <script>
@@ -147,6 +280,19 @@ function renderModels(models, total) {
                 
                 <!-- Compact Content -->
                 <div style="padding: 1rem;">
+                    <!-- Action Buttons -->
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                        <button onclick="showEditCanonicalModal(${model.id})" class="btn" style="flex: 1; background: #3b82f6; padding: 0.5rem;">
+                            ✏️ Edit
+                        </button>
+                        <button onclick="showAddModelModal(${model.id})" class="btn" style="flex: 1; background: #10b981; padding: 0.5rem;">
+                            ➕ Add Model
+                        </button>
+                        <button onclick="deleteCanonicalModel(${model.id}, '${model.display_name.replace(/'/g, "\\'")}', ${model.provider_count})" class="btn" style="background: #dc2626; padding: 0.5rem;">
+                            🗑️
+                        </button>
+                    </div>
+                    
                     <!-- Providers (Compact Table) -->
                     <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
@@ -175,6 +321,7 @@ function renderModels(models, total) {
                                             </td>
                                             <td style="padding: 0.5rem; text-align: right;">
                                                 <a href="/models/${provider.model_id}" class="btn-sm">View</a>
+                                                <button onclick="removeModelFromCanonical(${model.id}, ${provider.model_id}, '${provider.provider.replace(/'/g, "\\'")}'); event.stopPropagation();" class="btn-sm" style="background: #dc2626; margin-left: 0.25rem;">✕</button>
                                             </td>
                                         </tr>
                                     `;
@@ -289,6 +436,230 @@ function runModelMatching() {
         alert('Error: ' + error);
         btn.disabled = false;
         btn.innerHTML = originalText;
+    });
+}
+
+function showEditCanonicalModal(canonicalId) {
+    fetch(`/api/canonical-models/${canonicalId}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('editCanonicalId').value = data.id;
+            document.getElementById('editCanonicalName').value = data.canonical_name || '';
+            document.getElementById('editDisplayName').value = data.display_name || '';
+            document.getElementById('editCanonicalDescription').value = data.description || '';
+            document.getElementById('editCanonicalType').value = data.model_type || '';
+            document.getElementById('editCanonicalTags').value = (data.tags || []).join(', ');
+            
+            document.getElementById('editCanonicalModal').style.display = 'flex';
+        })
+        .catch(error => {
+            alert('Error loading canonical model: ' + error);
+        });
+}
+
+function closeEditCanonicalModal() {
+    document.getElementById('editCanonicalModal').style.display = 'none';
+}
+
+function saveCanonicalModel(event) {
+    event.preventDefault();
+    
+    const canonicalId = document.getElementById('editCanonicalId').value;
+    const tagsInput = document.getElementById('editCanonicalTags').value;
+    const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+    
+    const data = {
+        canonical_name: document.getElementById('editCanonicalName').value,
+        display_name: document.getElementById('editDisplayName').value,
+        description: document.getElementById('editCanonicalDescription').value,
+        model_type: document.getElementById('editCanonicalType').value,
+        tags: tags
+    };
+    
+    fetch(`/api/canonical-models/${canonicalId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert('✓ Canonical model updated successfully!');
+            closeEditCanonicalModal();
+            loadCanonicalModels();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function deleteCanonicalModel(canonicalId, canonicalName, providerCount) {
+    if (!confirm(`Delete unified model "${canonicalName}"?\n\nThis will remove the unified model and unlink ${providerCount} provider model(s).\n\nThe individual provider models will NOT be deleted.\n\nThis action cannot be undone.`)) {
+        return;
+    }
+    
+    fetch(`/api/canonical-models/${canonicalId}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ Canonical model deleted successfully!');
+            loadCanonicalModels();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function showAddModelModal(canonicalId) {
+    document.getElementById('addModelCanonicalId').value = canonicalId;
+    document.getElementById('addModelCanonicalModal').style.display = 'flex';
+    
+    // Load available models
+    loadAvailableModels();
+}
+
+function closeAddModelModal() {
+    document.getElementById('addModelCanonicalModal').style.display = 'none';
+}
+
+function loadAvailableModels() {
+    fetch('/api/ai-models?per_page=1000')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('addModelSelect');
+            select.innerHTML = '<option value="">Select a model...</option>';
+            
+            data.models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = `${model.name} (${model.source.name})`;
+                select.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading models:', error);
+        });
+}
+
+function addModelToCanonical(event) {
+    event.preventDefault();
+    
+    const canonicalId = document.getElementById('addModelCanonicalId').value;
+    const aiModelId = document.getElementById('addModelSelect').value;
+    
+    if (!aiModelId) {
+        alert('Please select a model');
+        return;
+    }
+    
+    const data = {
+        ai_model_id: parseInt(aiModelId),
+        confidence: 1.0,
+        matched_by: 'manual'
+    };
+    
+    fetch(`/api/canonical-models/${canonicalId}/models`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert('✓ Model added successfully!');
+            closeAddModelModal();
+            loadCanonicalModels();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function showCreateCanonicalModal() {
+    document.getElementById('createCanonicalModal').style.display = 'flex';
+}
+
+function closeCreateCanonicalModal() {
+    document.getElementById('createCanonicalModal').style.display = 'none';
+}
+
+function createCanonicalModel(event) {
+    event.preventDefault();
+    
+    const tagsInput = document.getElementById('createCanonicalTags').value;
+    const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+    
+    const data = {
+        canonical_name: document.getElementById('createCanonicalName').value,
+        display_name: document.getElementById('createDisplayName').value,
+        description: document.getElementById('createCanonicalDescription').value,
+        model_type: document.getElementById('createCanonicalType').value,
+        tags: tags
+    };
+    
+    fetch('/api/canonical-models', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert('✓ Canonical model created successfully!');
+            closeCreateCanonicalModal();
+            document.getElementById('createCanonicalForm').reset();
+            loadCanonicalModels();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function removeModelFromCanonical(canonicalId, aiModelId, providerName) {
+    if (!confirm(`Remove "${providerName}" from this unified model?\n\nThe individual provider model will NOT be deleted.`)) {
+        return;
+    }
+    
+    fetch(`/api/canonical-models/${canonicalId}/models/${aiModelId}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ Model removed successfully!');
+            loadCanonicalModels();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
     });
 }
 </script>

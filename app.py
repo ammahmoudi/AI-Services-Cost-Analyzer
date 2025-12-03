@@ -1744,5 +1744,508 @@ def get_canonical_model_detail(canonical_id):
         close_session()
 
 
+# ============================================================================
+# CRUD API Endpoints for AI Models
+# ============================================================================
+
+@app.route('/api/ai-models', methods=['GET'])
+def api_get_ai_models():
+    """Get all AI models with filtering and pagination"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import AIModel, APISource
+        
+        # Get query parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        search = request.args.get('search', '')
+        source_id = request.args.get('source_id', type=int)
+        model_type = request.args.get('type', '')
+        category = request.args.get('category', '')
+        
+        # Build query
+        query = session.query(AIModel).filter(AIModel.is_active == True)
+        
+        if search:
+            query = query.filter(
+                (AIModel.name.ilike(f'%{search}%')) | 
+                (AIModel.model_id.ilike(f'%{search}%'))
+            )
+        if source_id:
+            query = query.filter(AIModel.source_id == source_id)
+        if model_type:
+            query = query.filter(AIModel.model_type == model_type)
+        if category:
+            query = query.filter(AIModel.category == category)
+        
+        # Paginate
+        total = query.count()
+        models = query.order_by(AIModel.name).offset((page - 1) * per_page).limit(per_page).all()
+        
+        # Format response
+        models_data = []
+        for model in models:
+            models_data.append({
+                'id': model.id,
+                'model_id': model.model_id,
+                'name': model.name,
+                'description': model.description,
+                'model_type': model.model_type,
+                'category': model.category,
+                'cost_per_call': model.cost_per_call,
+                'cost_per_1k_tokens': model.cost_per_1k_tokens,
+                'credits_required': model.credits_required,
+                'pricing_formula': model.pricing_formula,
+                'tags': model.tags or [],
+                'source': {
+                    'id': model.source.id,
+                    'name': model.source.name
+                } if model.source else None,
+                'has_llm_data': model.llm_extracted,
+                'has_schema': bool(model.input_schema or model.output_schema),
+                'has_raw_data': bool(model.raw_metadata),
+            })
+        
+        return jsonify({
+            'models': models_data,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': (total + per_page - 1) // per_page
+        })
+    
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/ai-models', methods=['POST'])
+def api_create_ai_model():
+    """Create a new AI model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import AIModel, APISource
+        from ai_cost_manager.model_types import VALID_MODEL_TYPES
+        
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('source_id'):
+            return jsonify({'error': 'source_id is required'}), 400
+        if not data.get('model_id'):
+            return jsonify({'error': 'model_id is required'}), 400
+        if not data.get('name'):
+            return jsonify({'error': 'name is required'}), 400
+        if not data.get('model_type'):
+            return jsonify({'error': 'model_type is required'}), 400
+        
+        # Validate source exists
+        source = session.query(APISource).filter(APISource.id == data['source_id']).first()
+        if not source:
+            return jsonify({'error': 'Source not found'}), 404
+        
+        # Validate model_type
+        if data['model_type'] not in VALID_MODEL_TYPES:
+            return jsonify({'error': f"Invalid model_type. Must be one of: {', '.join(VALID_MODEL_TYPES)}"}), 400
+        
+        # Check if model_id already exists for this source
+        existing = session.query(AIModel).filter(
+            AIModel.source_id == data['source_id'],
+            AIModel.model_id == data['model_id']
+        ).first()
+        if existing:
+            return jsonify({'error': 'A model with this model_id already exists for this source'}), 409
+        
+        # Parse tags
+        tags = data.get('tags', [])
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(',') if t.strip()]
+        
+        # Create new model
+        model = AIModel(
+            source_id=data['source_id'],
+            model_id=data['model_id'],
+            name=data['name'],
+            description=data.get('description', ''),
+            model_type=data['model_type'],
+            category=data.get('category'),
+            cost_per_call=float(data['cost_per_call']) if data.get('cost_per_call') else 0.0,
+            cost_per_1k_tokens=float(data['cost_per_1k_tokens']) if data.get('cost_per_1k_tokens') else None,
+            credits_required=float(data['credits_required']) if data.get('credits_required') else None,
+            pricing_formula=data.get('pricing_formula', ''),
+            tags=tags,
+            is_active=True
+        )
+        
+        session.add(model)
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Model created successfully',
+            'id': model.id
+        }), 201
+    
+    except Exception as e:
+        session.rollback()
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/ai-models/<int:model_id>', methods=['GET'])
+def api_get_ai_model(model_id):
+    """Get a specific AI model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import AIModel
+        
+        model = session.query(AIModel).filter(AIModel.id == model_id).first()
+        if not model:
+            return jsonify({'error': 'Model not found'}), 404
+        
+        return jsonify({
+            'id': model.id,
+            'model_id': model.model_id,
+            'name': model.name,
+            'description': model.description,
+            'model_type': model.model_type,
+            'category': model.category,
+            'cost_per_call': model.cost_per_call,
+            'cost_per_1k_tokens': model.cost_per_1k_tokens,
+            'credits_required': model.credits_required,
+            'pricing_type': model.pricing_type,
+            'pricing_formula': model.pricing_formula,
+            'pricing_info': model.pricing_info,
+            'tags': model.tags or [],
+            'thumbnail_url': model.thumbnail_url,
+            'source': {
+                'id': model.source.id,
+                'name': model.source.name
+            } if model.source else None,
+            'input_schema': model.input_schema,
+            'output_schema': model.output_schema,
+            'raw_metadata': model.raw_metadata,
+            'llm_extracted': model.llm_extracted,
+            'created_at': model.created_at.isoformat() if model.created_at else None,
+            'updated_at': model.updated_at.isoformat() if model.updated_at else None,
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/ai-models/<int:model_id>', methods=['PUT'])
+def api_update_ai_model(model_id):
+    """Update an AI model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import AIModel
+        from ai_cost_manager.model_types import VALID_MODEL_TYPES
+        
+        model = session.query(AIModel).filter(AIModel.id == model_id).first()
+        if not model:
+            return jsonify({'error': 'Model not found'}), 404
+        
+        data = request.get_json()
+        
+        # Update fields
+        if 'name' in data:
+            model.name = data['name']
+        if 'description' in data:
+            model.description = data['description']
+        if 'model_type' in data:
+            if data['model_type'] not in VALID_MODEL_TYPES:
+                return jsonify({'error': f"Invalid model_type. Must be one of: {', '.join(VALID_MODEL_TYPES)}"}), 400
+            model.model_type = data['model_type']
+        if 'category' in data:
+            model.category = data['category']
+        if 'cost_per_call' in data:
+            model.cost_per_call = float(data['cost_per_call'])
+        if 'cost_per_1k_tokens' in data:
+            model.cost_per_1k_tokens = float(data['cost_per_1k_tokens']) if data['cost_per_1k_tokens'] else None
+        if 'credits_required' in data:
+            model.credits_required = float(data['credits_required']) if data['credits_required'] else None
+        if 'pricing_formula' in data:
+            model.pricing_formula = data['pricing_formula']
+        if 'tags' in data:
+            model.tags = data['tags'] if isinstance(data['tags'], list) else []
+        
+        model.updated_at = datetime.utcnow()
+        session.commit()
+        
+        return jsonify({'success': True, 'message': 'Model updated successfully'})
+    
+    except Exception as e:
+        session.rollback()
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/ai-models/<int:model_id>', methods=['DELETE'])
+def api_delete_ai_model(model_id):
+    """Delete an AI model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import AIModel
+        
+        model = session.query(AIModel).filter(AIModel.id == model_id).first()
+        if not model:
+            return jsonify({'error': 'Model not found'}), 404
+        
+        model_name = model.name
+        session.delete(model)
+        session.commit()
+        
+        return jsonify({'success': True, 'message': f'Model "{model_name}" deleted successfully'})
+    
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+# ============================================================================
+# CRUD API Endpoints for Canonical Models
+# ============================================================================
+
+@app.route('/api/canonical-models', methods=['POST'])
+def api_create_canonical_model():
+    """Create a new canonical model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import CanonicalModel
+        from ai_cost_manager.model_types import VALID_MODEL_TYPES
+        
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('canonical_name'):
+            return jsonify({'error': 'canonical_name is required'}), 400
+        if not data.get('display_name'):
+            return jsonify({'error': 'display_name is required'}), 400
+        
+        # Validate model_type
+        model_type = data.get('model_type')
+        if model_type and model_type not in VALID_MODEL_TYPES:
+            return jsonify({'error': f"Invalid model_type. Must be one of: {', '.join(VALID_MODEL_TYPES)}"}), 400
+        
+        # Check if canonical_name already exists
+        existing = session.query(CanonicalModel).filter(
+            CanonicalModel.canonical_name == data['canonical_name']
+        ).first()
+        if existing:
+            return jsonify({'error': 'A canonical model with this name already exists'}), 409
+        
+        # Create new canonical model
+        canonical = CanonicalModel(
+            canonical_name=data['canonical_name'],
+            display_name=data['display_name'],
+            description=data.get('description', ''),
+            model_type=model_type,
+            tags=data.get('tags', [])
+        )
+        
+        session.add(canonical)
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Canonical model created successfully',
+            'id': canonical.id
+        }), 201
+    
+    except Exception as e:
+        session.rollback()
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models/<int:canonical_id>', methods=['PUT'])
+def api_update_canonical_model(canonical_id):
+    """Update a canonical model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import CanonicalModel
+        from ai_cost_manager.model_types import VALID_MODEL_TYPES
+        
+        canonical = session.query(CanonicalModel).filter(
+            CanonicalModel.id == canonical_id
+        ).first()
+        
+        if not canonical:
+            return jsonify({'error': 'Canonical model not found'}), 404
+        
+        data = request.get_json()
+        
+        # Update fields
+        if 'canonical_name' in data:
+            # Check if new name conflicts with existing
+            existing = session.query(CanonicalModel).filter(
+                CanonicalModel.canonical_name == data['canonical_name'],
+                CanonicalModel.id != canonical_id
+            ).first()
+            if existing:
+                return jsonify({'error': 'A canonical model with this name already exists'}), 409
+            canonical.canonical_name = data['canonical_name']
+        
+        if 'display_name' in data:
+            canonical.display_name = data['display_name']
+        if 'description' in data:
+            canonical.description = data['description']
+        if 'model_type' in data:
+            if data['model_type'] and data['model_type'] not in VALID_MODEL_TYPES:
+                return jsonify({'error': f"Invalid model_type. Must be one of: {', '.join(VALID_MODEL_TYPES)}"}), 400
+            canonical.model_type = data['model_type']
+        if 'tags' in data:
+            canonical.tags = data['tags'] if isinstance(data['tags'], list) else []
+        
+        canonical.updated_at = datetime.utcnow()
+        session.commit()
+        
+        return jsonify({'success': True, 'message': 'Canonical model updated successfully'})
+    
+    except Exception as e:
+        session.rollback()
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models/<int:canonical_id>', methods=['DELETE'])
+def api_delete_canonical_model(canonical_id):
+    """Delete a canonical model and its matches"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import CanonicalModel
+        
+        canonical = session.query(CanonicalModel).filter(
+            CanonicalModel.id == canonical_id
+        ).first()
+        
+        if not canonical:
+            return jsonify({'error': 'Canonical model not found'}), 404
+        
+        canonical_name = canonical.canonical_name
+        session.delete(canonical)  # Cascade will delete model matches
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Canonical model "{canonical_name}" deleted successfully'
+        })
+    
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models/<int:canonical_id>/models', methods=['POST'])
+def api_add_model_to_canonical(canonical_id):
+    """Add an AI model to a canonical model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import CanonicalModel, ModelMatch, AIModel
+        
+        canonical = session.query(CanonicalModel).filter(
+            CanonicalModel.id == canonical_id
+        ).first()
+        
+        if not canonical:
+            return jsonify({'error': 'Canonical model not found'}), 404
+        
+        data = request.get_json()
+        ai_model_id = data.get('ai_model_id')
+        
+        if not ai_model_id:
+            return jsonify({'error': 'ai_model_id is required'}), 400
+        
+        # Check if AI model exists
+        ai_model = session.query(AIModel).filter(AIModel.id == ai_model_id).first()
+        if not ai_model:
+            return jsonify({'error': 'AI model not found'}), 404
+        
+        # Check if match already exists
+        existing_match = session.query(ModelMatch).filter(
+            ModelMatch.canonical_model_id == canonical_id,
+            ModelMatch.ai_model_id == ai_model_id
+        ).first()
+        
+        if existing_match:
+            return jsonify({'error': 'This model is already linked to this canonical model'}), 409
+        
+        # Create match
+        match = ModelMatch(
+            canonical_model_id=canonical_id,
+            ai_model_id=ai_model_id,
+            confidence=data.get('confidence', 1.0),
+            matched_by=data.get('matched_by', 'manual')
+        )
+        
+        session.add(match)
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Model "{ai_model.name}" added to canonical model'
+        }), 201
+    
+    except Exception as e:
+        session.rollback()
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models/<int:canonical_id>/models/<int:ai_model_id>', methods=['DELETE'])
+def api_remove_model_from_canonical(canonical_id, ai_model_id):
+    """Remove an AI model from a canonical model"""
+    session = get_session()
+    try:
+        from ai_cost_manager.models import ModelMatch
+        
+        match = session.query(ModelMatch).filter(
+            ModelMatch.canonical_model_id == canonical_id,
+            ModelMatch.ai_model_id == ai_model_id
+        ).first()
+        
+        if not match:
+            return jsonify({'error': 'Model match not found'}), 404
+        
+        session.delete(match)
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Model removed from canonical model'
+        })
+    
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

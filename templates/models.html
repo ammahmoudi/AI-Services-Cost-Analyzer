@@ -4,9 +4,14 @@
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h2>AI Models</h2>
-        <button class="btn btn-danger" onclick="showDeleteAllDialog()" style="background: #dc2626;">
-            🗑️ Delete All Models
-        </button>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn" style="background: #10b981;" onclick="showCreateModal()">
+                ➕ Create New Model
+            </button>
+            <button class="btn btn-danger" onclick="showDeleteAllDialog()" style="background: #dc2626;">
+                🗑️ Delete All Models
+            </button>
+        </div>
     </div>
     
     <!-- Missing Data Statistics -->
@@ -189,10 +194,9 @@
                     <td>{{ model.source.name }}</td>
                     <td>
                         <a href="/models/{{ model.id }}" class="btn btn-small">View</a>
+                        <button class="btn btn-small" style="background: #3b82f6;" onclick="showEditModal({{ model.id }})">✏️</button>
                         <button class="btn btn-small" style="background: #f59e0b;" onclick="refetchSingleModel({{ model.id }}, event)">🔄</button>
-                        <form method="POST" action="/models/{{ model.id }}/delete" style="display: inline;" onsubmit="return confirm('Delete model \"{{ model.name }}\"?');">
-                            <button type="submit" class="btn btn-small btn-danger">Delete</button>
-                        </form>
+                        <button class="btn btn-small btn-danger" onclick="deleteModel({{ model.id }}, '{{ model.name|replace("'", "\\'") }}')">🗑️</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -233,6 +237,176 @@
     </div>
 </div>
 
+<!-- Edit Model Modal -->
+<div id="editModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+        <h3 style="margin: 0 0 1.5rem 0;">✏️ Edit Model</h3>
+        <form id="editForm" onsubmit="saveModel(event)">
+            <input type="hidden" id="editModelId">
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Model ID *</label>
+                <input type="text" id="editModelId_field" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <small style="color: #6b7280;">Unique identifier from provider</small>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Name *</label>
+                <input type="text" id="editName" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Description</label>
+                <textarea id="editDescription" rows="3" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Model Type *</label>
+                <select id="editModelType" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">Select type...</option>
+                    <option value="text-generation">text-generation</option>
+                    <option value="image-generation">image-generation</option>
+                    <option value="video-generation">video-generation</option>
+                    <option value="audio-generation">audio-generation</option>
+                    <option value="3d-generation">3d-generation</option>
+                    <option value="embeddings">embeddings</option>
+                    <option value="code-generation">code-generation</option>
+                    <option value="reranking">reranking</option>
+                    <option value="moderation">moderation</option>
+                    <option value="search">search</option>
+                    <option value="other">other</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Category</label>
+                <input type="text" id="editCategory" placeholder="e.g., text-to-image, image-to-video" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <small style="color: #6b7280;">Specific type (not validated)</small>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Cost per Call ($)</label>
+                    <input type="number" id="editCostPerCall" step="0.0001" min="0" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Cost per 1K Tokens ($)</label>
+                    <input type="number" id="editCostPer1kTokens" step="0.0001" min="0" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Credits Required</label>
+                <input type="number" id="editCreditsRequired" step="0.01" min="0" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Pricing Formula</label>
+                <textarea id="editPricingFormula" rows="2" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Tags (comma-separated)</label>
+                <input type="text" id="editTags" placeholder="image, ai, generation" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" class="btn" style="flex: 1; background: #10b981;">💾 Save Changes</button>
+                <button type="button" onclick="closeEditModal()" class="btn" style="flex: 1; background: #6b7280;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Create Model Modal -->
+<div id="createModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+        <h3 style="margin: 0 0 1.5rem 0;">➕ Create New Model</h3>
+        <form id="createForm" onsubmit="createModel(event)">
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Source *</label>
+                <select id="createSource" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">Select source...</option>
+                    {% for source in sources %}
+                    <option value="{{ source.id }}">{{ source.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Model ID *</label>
+                <input type="text" id="createModelId" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <small style="color: #6b7280;">Unique identifier from provider</small>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Name *</label>
+                <input type="text" id="createName" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Description</label>
+                <textarea id="createDescription" rows="3" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Model Type *</label>
+                <select id="createModelType" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">Select type...</option>
+                    <option value="text-generation">text-generation</option>
+                    <option value="image-generation">image-generation</option>
+                    <option value="video-generation">video-generation</option>
+                    <option value="audio-generation">audio-generation</option>
+                    <option value="3d-generation">3d-generation</option>
+                    <option value="embeddings">embeddings</option>
+                    <option value="code-generation">code-generation</option>
+                    <option value="reranking">reranking</option>
+                    <option value="moderation">moderation</option>
+                    <option value="search">search</option>
+                    <option value="other">other</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Category</label>
+                <input type="text" id="createCategory" placeholder="e.g., text-to-image, image-to-video" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <small style="color: #6b7280;">Specific type (not validated)</small>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Cost per Call ($)</label>
+                    <input type="number" id="createCostPerCall" step="0.0001" min="0" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Cost per 1K Tokens ($)</label>
+                    <input type="number" id="createCostPer1kTokens" step="0.0001" min="0" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Credits Required</label>
+                <input type="number" id="createCreditsRequired" step="0.01" min="0" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Pricing Formula</label>
+                <textarea id="createPricingFormula" rows="2" placeholder="e.g., $0.001 per image" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;"></textarea>
+            </div>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Tags (comma-separated)</label>
+                <input type="text" id="createTags" placeholder="image, ai, generation" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" class="btn" style="flex: 1; background: #10b981;">➕ Create Model</button>
+                <button type="button" onclick="closeCreateModal()" class="btn" style="flex: 1; background: #6b7280;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -241,6 +415,151 @@
 document.addEventListener('DOMContentLoaded', function() {
     updateTagsDisplay();
 });
+
+function showEditModal(modelId) {
+    // Fetch model data
+    fetch(`/api/ai-models/${modelId}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('editModelId').value = data.id;
+            document.getElementById('editModelId_field').value = data.model_id || '';
+            document.getElementById('editName').value = data.name || '';
+            document.getElementById('editDescription').value = data.description || '';
+            document.getElementById('editModelType').value = data.model_type || '';
+            document.getElementById('editCategory').value = data.category || '';
+            document.getElementById('editCostPerCall').value = data.cost_per_call || '';
+            document.getElementById('editCostPer1kTokens').value = data.cost_per_1k_tokens || '';
+            document.getElementById('editCreditsRequired').value = data.credits_required || '';
+            document.getElementById('editPricingFormula').value = data.pricing_formula || '';
+            document.getElementById('editTags').value = (data.tags || []).join(', ');
+            
+            document.getElementById('editModal').style.display = 'flex';
+        })
+        .catch(error => {
+            alert('Error loading model: ' + error);
+        });
+}
+
+function showCreateModal() {
+    document.getElementById('createForm').reset();
+    document.getElementById('createModal').style.display = 'flex';
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+function closeCreateModal() {
+    document.getElementById('createModal').style.display = 'none';
+}
+
+function createModel(event) {
+    event.preventDefault();
+    
+    const tagsInput = document.getElementById('createTags').value;
+    const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+    
+    const data = {
+        source_id: parseInt(document.getElementById('createSource').value),
+        model_id: document.getElementById('createModelId').value,
+        name: document.getElementById('createName').value,
+        description: document.getElementById('createDescription').value,
+        model_type: document.getElementById('createModelType').value,
+        category: document.getElementById('createCategory').value,
+        cost_per_call: document.getElementById('createCostPerCall').value || null,
+        cost_per_1k_tokens: document.getElementById('createCostPer1kTokens').value || null,
+        credits_required: document.getElementById('createCreditsRequired').value || null,
+        pricing_formula: document.getElementById('createPricingFormula').value,
+        tags: tags
+    };
+    
+    fetch('/api/ai-models', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert('✓ Model created successfully!');
+            closeCreateModal();
+            location.reload();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function saveModel(event) {
+    event.preventDefault();
+    
+    const modelId = document.getElementById('editModelId').value;
+    const tagsInput = document.getElementById('editTags').value;
+    const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+    
+    const data = {
+        name: document.getElementById('editName').value,
+        description: document.getElementById('editDescription').value,
+        model_type: document.getElementById('editModelType').value,
+        category: document.getElementById('editCategory').value,
+        cost_per_call: document.getElementById('editCostPerCall').value || null,
+        cost_per_1k_tokens: document.getElementById('editCostPer1kTokens').value || null,
+        credits_required: document.getElementById('editCreditsRequired').value || null,
+        pricing_formula: document.getElementById('editPricingFormula').value,
+        tags: tags
+    };
+    
+    fetch(`/api/ai-models/${modelId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            alert('✓ Model updated successfully!');
+            closeEditModal();
+            location.reload();
+        } else {
+            alert('Error: ' + result.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function deleteModel(modelId, modelName) {
+    if (!confirm(`Delete model "${modelName}"?\n\nThis action cannot be undone.`)) {
+        return;
+    }
+    
+    fetch(`/api/ai-models/${modelId}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✓ Model deleted successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    });
+}
 
 function updateTagsDisplay() {
     const select = document.getElementById('tagsSelect');
