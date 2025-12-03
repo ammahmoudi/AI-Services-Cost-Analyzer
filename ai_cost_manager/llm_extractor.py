@@ -125,33 +125,80 @@ Pricing Info Text: "{pricing_info}"
 ADDITIONAL CONTEXT:
 {additional_context}
 
-MODEL TYPE DETECTION HINTS:
-- Image generation models → model_type: "image-generation", add specific type to category ("text-to-image" or "image-to-image")
-- Video generation models → model_type: "video-generation", add specific type to category ("text-to-video" or "image-to-video")
-- Text generation models → model_type: "text-generation", add specific type to category if applicable ("image-to-text", "audio-to-text")
-- Audio generation models → model_type: "audio-generation"
-- Code generation models → model_type: "code-generation"
-- Embedding models → model_type: "embeddings"
-- Reranking models → model_type: "reranking"
+MODEL TYPE DETECTION HINTS (analyze model name and description carefully):
+
+1. 3D MODELS → model_type: "3d-generation"
+   Names: Hyper3D, Meshy, TripoSR, 3D, Shap-E, Point-E, InstantMesh
+   Keywords: 3d, mesh, point cloud, nerf, gaussian splatting
+   Categories: "text-to-3d", "image-to-3d", "mesh-generation"
+
+2. DETECTION MODELS → model_type: "detection"
+   Names: SAM, YOLO, Segment Anything, GroundingDINO, Detectron
+   Keywords: detection, segmentation, tracking, pose, keypoint
+   Categories: "object-detection", "segmentation", "sam", "yolo", "pose-detection"
+
+3. TRAINING MODELS → model_type: "training"
+   Names: LoRA, DreamBooth, Fine-tune, Training
+   Keywords: training, fine-tuning, lora, adapter, custom model
+   Categories: "fine-tuning", "lora-training", "dreambooth", "custom-training"
+
+4. IMAGE MODELS → model_type: "image-generation"
+   Names: FLUX, Stable Diffusion, DALL-E, Midjourney, Imagen
+   Keywords: image, picture, photo, art, draw
+   Categories: "text-to-image", "image-to-image", "inpainting", "upscaling"
+
+5. VIDEO MODELS → model_type: "video-generation"
+   Names: RunwayML, Pika, Sora, AnimateDiff, SVD
+   Keywords: video, animation, motion, frames
+   Categories: "text-to-video", "image-to-video", "video-editing"
+
+6. CODE MODELS → model_type: "code-generation"
+   Names: CodeLlama, StarCoder, Codex, Replit, CodeGen
+   Keywords: code, programming, developer, function
+   Categories: "code-completion", "code-generation"
+
+7. TEXT/LLM MODELS → model_type: "text-generation"
+   Names: GPT, Claude, Llama, Mistral, Gemini
+   Keywords: chat, text, language, completion
+   Categories: "chat", "completion", "vision" (if accepts images)
+
+8. AUDIO MODELS → model_type: "audio-generation"
+   Names: ElevenLabs, Whisper, Bark, MusicGen
+   Keywords: audio, speech, voice, music, sound
+   Categories: "text-to-speech", "speech-to-text", "music-generation"
+
+9. EMBEDDINGS → model_type: "embeddings"
+   Names: text-embedding, CLIP, E5, BGE
+   Keywords: embedding, vector, semantic
+
+10. RERANKING → model_type: "reranking"
+    Names: rerank, cross-encoder
+    Keywords: rerank, relevance
 
 IMPORTANT: Analyze the pricing carefully and return a JSON object with these exact fields:
 
 REQUIRED FIELDS:
-- model_type: MUST be a BROAD category, one of these values:
-  * "image-generation" (for any image generation/editing)
-  * "video-generation" (for any video generation)
-  * "text-generation" (for LLMs, chat, transcription, OCR, vision)
-  * "code-generation" (for code-specific models)
-  * "audio-generation" (for TTS, music generation)
-  * "embeddings" (for vector embeddings)
-  * "reranking" (for search reranking)
-  * "moderation" (for content moderation)
-  * "other" (if none of above fit)
+- model_type: MUST be a BROAD category. ANALYZE THE MODEL NAME FIRST!
+  * "3d-generation" - if name contains: 3D, Hyper3D, Meshy, TripoSR, Shap-E, Point-E, mesh
+  * "detection" - if name contains: SAM, YOLO, Segment, Detect, GroundingDINO, Grounding DINO
+  * "training" - if name contains: LoRA, DreamBooth, Fine-tune, Training, Adapter
+  * "code-generation" - if name contains: Code, CodeLlama, StarCoder, Codex, Replit
+  * "image-generation" - if name contains: FLUX, Stable Diffusion, DALL-E, Imagen, Image
+  * "video-generation" - if name contains: Runway, Pika, Sora, AnimateDiff, Video
+  * "audio-generation" - if name contains: Eleven, Whisper, Bark, MusicGen, Audio, Voice
+  * "text-generation" - if name contains: GPT, Claude, Llama, Mistral, Gemini, Chat, LLM
+  * "embeddings" - if name contains: embedding, CLIP, E5, BGE, vector
+  * "reranking" - if name contains: rerank, cross-encoder
+  * "moderation" - if name contains: moderation, safety, filter
+  * "search" - if name contains: search, retrieval
+  * "other" - ONLY if absolutely none of above match
 
 - category: SPECIFIC type (optional but recommended), one of:
   * "text-to-image", "image-to-image" (for image models)
   * "text-to-video", "image-to-video" (for video models)
   * "image-to-text", "audio-to-text" (for transcription/OCR models)
+  * "fine-tuning", "lora-training", "dreambooth" (for training models)
+  * "object-detection", "segmentation", "sam", "yolo" (for detection models)
   * Or same as model_type if no specific variant
 - pricing_type: MUST be one of: "per_token", "per_image", "per_video", "per_minute", "per_second", "per_call", "hourly", "fixed", "tiered", "per_megapixel"
 - cost_unit: MUST match pricing_type - "token", "image", "video", "minute", "second", "call", "hour", "megapixel"

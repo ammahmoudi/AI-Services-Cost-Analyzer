@@ -5,6 +5,9 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h2>AI Models</h2>
         <div style="display: flex; gap: 0.5rem;">
+            <button class="btn" style="background: #8b5cf6;" onclick="showLLMExtractionModal()" title="Use LLM to fix model types, tags, and metadata">
+                🤖 Run LLM Extraction
+            </button>
             <button class="btn" style="background: #10b981;" onclick="showCreateModal()">
                 ➕ Create New Model
             </button>
@@ -53,7 +56,7 @@
                 <option value="">All Types</option>
                 {% for type in model_types %}
                     <option value="{{ type }}" {% if current_type == type %}selected{% endif %}>
-                        {{ type }}
+                        {{ type|replace('-', ' ')|title }}
                     </option>
                 {% endfor %}
             </select>
@@ -274,6 +277,8 @@
                     <option value="reranking">reranking</option>
                     <option value="moderation">moderation</option>
                     <option value="search">search</option>
+                    <option value="training">training</option>
+                    <option value="detection">detection</option>
                     <option value="other">other</option>
                 </select>
             </div>
@@ -363,6 +368,8 @@
                     <option value="reranking">reranking</option>
                     <option value="moderation">moderation</option>
                     <option value="search">search</option>
+                    <option value="training">training</option>
+                    <option value="detection">detection</option>
                     <option value="other">other</option>
                 </select>
             </div>
@@ -404,6 +411,115 @@
                 <button type="button" onclick="closeCreateModal()" class="btn" style="flex: 1; background: #6b7280;">Cancel</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- LLM Extraction Modal -->
+<div id="llmExtractionModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%;">
+        <h3 style="margin: 0 0 1rem 0;">🤖 Run LLM Extraction</h3>
+        <p style="color: #6b7280; margin-bottom: 1.5rem;">
+            Use AI to analyze models and fix their types, categories, tags, and pricing information.
+        </p>
+        
+        <form id="llmExtractionForm" onsubmit="runLLMExtraction(event)">
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Filter by Source (optional)</label>
+                <select id="llmSourceFilter" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">All Sources</option>
+                    {% for source in sources %}
+                        <option value="{{ source.id }}">{{ source.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Filter by Type (optional)</label>
+                <select id="llmTypeFilter" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">All Types</option>
+                    <option value="text-generation">text-generation</option>
+                    <option value="image-generation">image-generation</option>
+                    <option value="video-generation">video-generation</option>
+                    <option value="audio-generation">audio-generation</option>
+                    <option value="3d-generation">3d-generation</option>
+                    <option value="embeddings">embeddings</option>
+                    <option value="code-generation">code-generation</option>
+                    <option value="reranking">reranking</option>
+                    <option value="moderation">moderation</option>
+                    <option value="search">search</option>
+                    <option value="training">training</option>
+                    <option value="detection">detection</option>
+                    <option value="other">other</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Filter by Missing Data</label>
+                <select id="llmMissingFilter" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <option value="">All Models</option>
+                    <option value="llm">Only Missing LLM Data</option>
+                </select>
+            </div>
+            
+            <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; margin-bottom: 1.5rem;">
+                <strong style="color: #92400e;">⚠️ Note:</strong>
+                <p style="color: #92400e; margin: 0.5rem 0 0 0; font-size: 0.875rem;">
+                    This process uses AI (LLM) to analyze and update model metadata. It may take several minutes depending on the number of models.
+                </p>
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" class="btn" style="flex: 1; background: #8b5cf6;">🚀 Start Extraction</button>
+                <button type="button" onclick="closeLLMExtractionModal()" class="btn" style="flex: 1; background: #6b7280;">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- LLM Extraction Progress Modal -->
+<div id="llmProgressModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 500px; width: 90%;">
+        <h3 style="margin: 0 0 1.5rem 0;">🤖 LLM Extraction in Progress</h3>
+        
+        <div style="margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="font-weight: 600;">Progress</span>
+                <span id="llmProgressText">0/0 models</span>
+            </div>
+            <div style="background: #e5e7eb; border-radius: 4px; height: 8px; overflow: hidden;">
+                <div id="llmProgressBar" style="background: linear-gradient(90deg, #8b5cf6, #6d28d9); height: 100%; width: 0%; transition: width 0.3s;"></div>
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 1.5rem;">
+            <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.25rem;">Currently processing:</div>
+            <div id="llmCurrentModel" style="font-weight: 600; color: #111827; margin-bottom: 1rem;">Starting...</div>
+            
+            <!-- Model Changes Display -->
+            <div id="llmModelChanges" style="display: none; padding: 0.75rem; background: #f3f4f6; border-radius: 6px; border: 1px solid #e5e7eb; font-size: 0.875rem;">
+                <div style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.5rem; align-items: center;">
+                    <div>
+                        <div style="color: #6b7280; font-size: 0.75rem; margin-bottom: 0.25rem;">Current Type</div>
+                        <div id="llmCurrentType" style="font-weight: 600; color: #dc2626;">-</div>
+                    </div>
+                    <div style="color: #6b7280; font-size: 1.25rem;">→</div>
+                    <div>
+                        <div style="color: #6b7280; font-size: 0.75rem; margin-bottom: 0.25rem;">LLM Extracted</div>
+                        <div id="llmExtractedType" style="font-weight: 600; color: #10b981;">-</div>
+                    </div>
+                </div>
+                <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb;">
+                    <div style="color: #6b7280; font-size: 0.75rem; margin-bottom: 0.25rem;">Category & Tags</div>
+                    <div id="llmExtractedDetails" style="color: #374151; font-size: 0.8rem;">-</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="llmProgressStatus"></div>
+        
+        <button onclick="closeLLMProgressModal()" class="btn" style="width: 100%; background: #6b7280; margin-top: 1rem;">
+            Close & Refresh
+        </button>
     </div>
 </div>
 
@@ -783,6 +899,126 @@ function refetchFiltered() {
     .catch(error => {
         alert('Error: ' + error);
     });
+}
+
+// LLM Extraction Modal Functions
+function showLLMExtractionModal() {
+    document.getElementById('llmExtractionModal').style.display = 'flex';
+}
+
+function closeLLMExtractionModal() {
+    document.getElementById('llmExtractionModal').style.display = 'none';
+}
+
+function runLLMExtraction(event) {
+    event.preventDefault();
+    
+    const sourceId = document.getElementById('llmSourceFilter').value;
+    const modelType = document.getElementById('llmTypeFilter').value;
+    const missingData = document.getElementById('llmMissingFilter').value;
+    
+    const payload = {};
+    if (sourceId) payload.source_id = parseInt(sourceId);
+    if (modelType) payload.model_type = modelType;
+    if (missingData) payload.missing_data = missingData;
+    
+    const btn = event.target.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Starting...';
+    
+    fetch('/api/run-llm-extraction', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            closeLLMExtractionModal();
+            showLLMProgressModal(data.total);
+        } else {
+            alert('Error: ' + data.error);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
+function showLLMProgressModal(total) {
+    const modal = document.getElementById('llmProgressModal');
+    modal.style.display = 'flex';
+    
+    const progressInterval = setInterval(() => {
+        fetch('/api/llm-extraction-progress')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    clearInterval(progressInterval);
+                    document.getElementById('llmProgressStatus').innerHTML = 
+                        '<div style="color: #dc2626;">❌ ' + data.error + '</div>';
+                    return;
+                }
+                
+                const percent = Math.round((data.processed_models / data.total_models) * 100);
+                document.getElementById('llmProgressBar').style.width = percent + '%';
+                document.getElementById('llmProgressText').textContent = 
+                    `${data.processed_models}/${data.total_models} models (${data.updated_models} updated)`;
+                document.getElementById('llmCurrentModel').textContent = 
+                    data.current_model_name || 'Processing...';
+                
+                // Show extraction changes if available
+                if (data.current_extraction) {
+                    const changesDiv = document.getElementById('llmModelChanges');
+                    changesDiv.style.display = 'block';
+                    
+                    const ext = data.current_extraction;
+                    document.getElementById('llmCurrentType').textContent = ext.original_type || 'none';
+                    document.getElementById('llmExtractedType').textContent = ext.extracted_type || 'none';
+                    
+                    let details = [];
+                    if (ext.extracted_category) {
+                        details.push(`Category: ${ext.extracted_category}`);
+                    }
+                    if (ext.extracted_tags && ext.extracted_tags.length > 0) {
+                        details.push(`Tags: ${ext.extracted_tags.join(', ')}`);
+                    }
+                    document.getElementById('llmExtractedDetails').textContent = 
+                        details.length > 0 ? details.join(' | ') : 'No additional details';
+                } else {
+                    document.getElementById('llmModelChanges').style.display = 'none';
+                }
+                
+                if (data.status === 'complete') {
+                    clearInterval(progressInterval);
+                    document.getElementById('llmProgressStatus').innerHTML = 
+                        '<div style="color: #10b981;">✅ Completed! Refreshing page...</div>';
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                } else if (data.status === 'error') {
+                    clearInterval(progressInterval);
+                    const errorMsg = data.errors && data.errors.length > 0 ? data.errors[data.errors.length - 1].message : 'Unknown error';
+                    document.getElementById('llmProgressStatus').innerHTML = 
+                        '<div style="color: #dc2626;">❌ Failed: ' + errorMsg + '</div>';
+                }
+            })
+            .catch(error => {
+                console.error('Progress check failed:', error);
+            });
+    }, 1000);
+}
+
+function closeLLMProgressModal() {
+    document.getElementById('llmProgressModal').style.display = 'none';
+    location.reload();
 }
 </script>
 {% endblock %}

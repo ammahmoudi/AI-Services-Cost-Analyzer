@@ -22,6 +22,8 @@ VALID_MODEL_TYPES = [
     'reranking',           # Search result reranking
     'moderation',          # Content moderation
     'search',              # Search and retrieval
+    'training',            # Model training, fine-tuning, LoRA training
+    'detection',           # Object detection, segmentation (SAM, YOLO, etc.)
     'other',               # Fallback for unclassified models
 ]
 
@@ -64,6 +66,24 @@ COMMON_CATEGORIES = {
         '3d-modeling',
         '3d-reconstruction',
         'mesh-generation',
+    ],
+    'training': [
+        'fine-tuning',
+        'lora-training',
+        'dreambooth',
+        'model-training',
+        'adapter-training',
+        'custom-model-training',
+    ],
+    'detection': [
+        'object-detection',
+        'segmentation',
+        'instance-segmentation',
+        'semantic-segmentation',
+        'pose-detection',
+        'face-detection',
+        'sam',  # Segment Anything Model
+        'yolo',
     ],
 }
 

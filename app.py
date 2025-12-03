@@ -5,6 +5,8 @@ Simple Flask web interface for viewing and managing AI model costs.
 """
 import os
 import json
+import time
+import traceback
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from dotenv import load_dotenv
 from ai_cost_manager.database import get_session, close_session, init_db
@@ -387,6 +389,8 @@ def extract_source(source_id):
 @app.route('/models')
 def models():
     """List all AI models"""
+    from ai_cost_manager.model_types import VALID_MODEL_TYPES
+    
     session = get_session()
     
     try:
@@ -438,9 +442,8 @@ def models():
         models = query.order_by(AIModel.name).all()
         sources = session.query(APISource).all()
         
-        # Get unique model types
-        all_types = session.query(AIModel.model_type).distinct().all()
-        model_types = sorted([t[0] for t in all_types if t[0]])
+        # Use VALID_MODEL_TYPES for filter dropdown (shows all available types)
+        model_types = VALID_MODEL_TYPES
         
         # Get unique categories
         all_categories = session.query(AIModel.category).distinct().all()
@@ -1381,6 +1384,233 @@ def re_extract_progress(source_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/run-llm-extraction', methods=['POST'])
+def run_llm_extraction():
+    """Run LLM extraction on models to fix types, tags, and metadata"""
+    from threading import Thread
+    from ai_cost_manager.llm_extractor import LLMPricingExtractor
+    from ai_cost_manager.progress_tracker import ProgressTracker
+    
+    session = get_session()
+    
+    try:
+        data = request.get_json() or {}
+        source_id = data.get('source_id')
+        model_type = data.get('model_type')
+        missing_data = data.get('missing_data')  # 'llm', 'all', etc.
+        
+        # Build query to count models
+        query = session.query(AIModel).filter(AIModel.is_active == True)
+        
+        if source_id:
+            query = query.filter_by(source_id=source_id)
+        
+        if model_type:
+            query = query.filter_by(model_type=model_type)
+        
+        if missing_data == 'llm':
+            query = query.filter(AIModel.llm_extracted.is_(None))
+        
+        model_count = query.count()
+        
+        if model_count == 0:
+            return jsonify({
+                'success': True,
+                'message': 'No models match filters',
+                'total': 0
+            })
+        
+        # Store filter parameters to rebuild query in thread
+        filter_params = {
+            'source_id': source_id,
+            'model_type': model_type,
+            'missing_data': missing_data
+        }
+        
+        # Use source_id 9999 as a special ID for LLM extraction progress
+        progress_source_id = 9999
+        
+        # Create progress tracker
+        source_name = "All Sources" if not source_id else session.query(APISource).get(source_id).name
+        progress_tracker = ProgressTracker(
+            source_name=f"LLM Extraction - {source_name}",
+            source_id=progress_source_id
+        )
+        progress_tracker.start(total_models=model_count, options={'use_llm': True})
+        
+        # Start LLM extraction in background thread
+        def run_llm_thread():
+            from ai_cost_manager.database import get_session, close_session
+            thread_session = get_session()
+            
+            try:
+                # Rebuild query in thread session to avoid detached instances
+                thread_query = thread_session.query(AIModel).filter(AIModel.is_active == True)
+                
+                if filter_params['source_id']:
+                    thread_query = thread_query.filter_by(source_id=filter_params['source_id'])
+                
+                if filter_params['model_type']:
+                    thread_query = thread_query.filter_by(model_type=filter_params['model_type'])
+                
+                if filter_params['missing_data'] == 'llm':
+                    thread_query = thread_query.filter(AIModel.llm_extracted.is_(None))
+                
+                models = thread_query.all()
+                
+                llm_extractor = LLMPricingExtractor()
+                
+                updated_count = 0
+                batch_size = 10
+                batch_count = 0
+                
+                for i, model in enumerate(models, 1):
+                    try:
+                        # Store original values
+                        original_type = model.model_type
+                        original_category = model.category
+                        original_tags = model.tags or []
+                        
+                        # Update progress
+                        progress_tracker.update(
+                            processed=i,
+                            current_model_id=model.model_id,
+                            current_model_name=model.name
+                        )
+                        
+                        # Prepare model data for LLM extraction
+                        model_data = {
+                            'name': model.name,
+                            'model_id': model.model_id,
+                            'description': model.description,
+                            'pricing_info': model.pricing_formula or '',
+                            'creditsRequired': model.credits_required or 0,
+                            'model_type': model.model_type,
+                            'category': model.category,
+                            'tags': model.tags or [],
+                            'raw_metadata': model.raw_metadata or {},
+                            'input_schema': model.input_schema or {},
+                            'output_schema': model.output_schema or {},
+                        }
+                        
+                        # Run LLM extraction with error handling
+                        try:
+                            llm_result = llm_extractor.extract_pricing(model_data)
+                        except Exception as llm_error:
+                            print(f"  LLM extraction failed for {model.name}: {llm_error}")
+                            llm_result = None
+                        
+                        # Brief delay to avoid rate limiting
+                        time.sleep(0.5)
+                        
+                        if llm_result:
+                            # Update model with LLM-extracted data
+                            if llm_result.get('model_type'):
+                                model.model_type = llm_result['model_type']
+                            
+                            if llm_result.get('category'):
+                                model.category = llm_result['category']
+                            
+                            if llm_result.get('tags'):
+                                model.tags = llm_result['tags']
+                            
+                            if llm_result.get('description'):
+                                model.description = llm_result['description']
+                            
+                            if llm_result.get('cost_per_call') is not None:
+                                model.cost_per_call = llm_result['cost_per_call']
+                            
+                            if llm_result.get('pricing_formula'):
+                                model.pricing_formula = llm_result['pricing_formula']
+                            
+                            # Mark as LLM extracted (store as JSON)
+                            model.llm_extracted = llm_result
+                            
+                            updated_count += 1
+                            progress_tracker.increment_updated()
+                            
+                            # Store comparison data in progress tracker for UI display
+                            progress_tracker.state['current_extraction'] = {
+                                'original_type': original_type,
+                                'extracted_type': llm_result.get('model_type'),
+                                'original_category': original_category,
+                                'extracted_category': llm_result.get('category'),
+                                'original_tags': original_tags,
+                                'extracted_tags': llm_result.get('tags', []),
+                            }
+                            progress_tracker._save()
+                        
+                        batch_count += 1
+                        
+                        if batch_count >= batch_size:
+                            thread_session.commit()
+                            batch_count = 0
+                        
+                    except Exception as e:
+                        print(f"Error processing {model.name}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        progress_tracker.update(
+                            processed=i,
+                            current_model_id=model.model_id,
+                            current_model_name=model.name,
+                            has_error=True,
+                            error_message=str(e)
+                        )
+                        thread_session.rollback()
+                        batch_count = 0
+                        # Continue with next model instead of stopping
+                
+                # Final commit
+                if batch_count > 0:
+                    thread_session.commit()
+                
+                progress_tracker.complete()
+                
+                print(f"✅ LLM extraction completed: {updated_count}/{len(models)} models updated")
+                
+            except Exception as e:
+                print(f"❌ LLM extraction failed: {e}")
+                progress_tracker.error(str(e))
+                thread_session.rollback()
+            finally:
+                close_session()
+        
+        # Start thread
+        thread = Thread(target=run_llm_thread)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Started LLM extraction for {model_count} models',
+            'total': model_count,
+            'progress_id': progress_source_id
+        })
+        
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/llm-extraction-progress')
+def llm_extraction_progress():
+    """Get LLM extraction progress"""
+    try:
+        from ai_cost_manager.progress_tracker import ProgressTracker
+        
+        progress = ProgressTracker.load(9999)  # Special ID for LLM extraction
+        
+        if not progress:
+            return jsonify({'error': 'No active LLM extraction'}), 404
+        
+        return jsonify(progress)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/models/<int:model_id>/refetch', methods=['POST'])
 def refetch_model(model_id):
     """Re-fetch all data for a single model"""
@@ -1660,28 +1890,17 @@ def get_canonical_models():
         }), 500
     
     session = get_session()
+    all_models = []
+    
     try:
         model_type = request.args.get('model_type')
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         
         service = ModelMatchingService(session)
+        # Get all models and extract data before session closes
         all_models = service.get_canonical_models(model_type=model_type)
         
-        # Paginate
-        total = len(all_models)
-        start = (page - 1) * per_page
-        end = start + per_page
-        models = all_models[start:end]
-        
-        return jsonify({
-            'total': total,
-            'page': page,
-            'per_page': per_page,
-            'total_pages': (total + per_page - 1) // per_page,
-            'models': models
-        })
-    
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
@@ -1689,6 +1908,20 @@ def get_canonical_models():
         return jsonify({'error': str(e), 'models': []}), 500
     finally:
         close_session()
+    
+    # Paginate after session is closed (data is already serialized)
+    total = len(all_models)
+    start = (page - 1) * per_page
+    end = start + per_page
+    models = all_models[start:end]
+    
+    return jsonify({
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page,
+        'models': models
+    })
 
 
 @app.route('/api/canonical-models/<int:canonical_id>', methods=['GET'])

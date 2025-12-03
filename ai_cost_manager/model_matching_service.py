@@ -202,6 +202,8 @@ class ModelMatchingService:
         Returns:
             List of canonical models with provider details
         """
+        from sqlalchemy.orm import joinedload
+        
         query = self.session.query(CanonicalModel)
         
         if model_type:
@@ -211,8 +213,10 @@ class ModelMatchingService:
         
         result = []
         for canonical in canonical_models:
-            # Get all providers for this model
-            matches = self.session.query(ModelMatch).filter(
+            # Get all providers for this model with eager loading
+            matches = self.session.query(ModelMatch).options(
+                joinedload(ModelMatch.ai_model).joinedload(AIModel.source)
+            ).filter(
                 ModelMatch.canonical_model_id == canonical.id
             ).all()
             

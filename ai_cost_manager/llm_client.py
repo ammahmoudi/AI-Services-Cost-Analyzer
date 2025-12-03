@@ -11,7 +11,7 @@ class LLMClient:
     def __init__(self, config: LLMConfiguration):
         self.config = config
 
-    def chat(self, prompt: str, temperature: float = 0.1, max_tokens: int = 500, timeout: int = 30) -> str:
+    def chat(self, prompt: str, temperature: float = 0.1, max_tokens: int = 500, timeout: int = 30, retries: int = 2) -> str:
         """Send a chat/completion request to the configured LLM endpoint.
         
         Args:
@@ -19,6 +19,7 @@ class LLMClient:
             temperature: Sampling temperature (0.0 to 1.0)
             max_tokens: Maximum tokens in the response
             timeout: Request timeout in seconds (default: 30)
+            retries: Number of retry attempts on failure (default: 2)
             
         Raises:
             Exception: On API errors, timeouts, or network issues
@@ -41,35 +42,56 @@ class LLMClient:
             'max_tokens': max_tokens,
         }
         
-        try:
-            response = requests.post(
-                f'{self.config.base_url}/chat/completions',
-                headers=headers,
-                json=data,
-                timeout=timeout
-            )
-        except requests.Timeout:
-            raise Exception(f"LLM API request timed out after {timeout} seconds. The API may be slow or unresponsive.")
-        except requests.ConnectionError:
-            raise Exception("Failed to connect to LLM API. Check your network connection and API endpoint.")
-        except requests.RequestException as e:
-            raise Exception(f"LLM API request failed: {str(e)}")
+        last_error = None
+        for attempt in range(retries + 1):
+            try:
+                response = requests.post(
+                    f'{self.config.base_url}/chat/completions',
+                    headers=headers,
+                    json=data,
+                    timeout=timeout
+                )
+                
+                if response.status_code == 429:
+                    raise Exception("Rate limit exceeded. Please wait before making more requests.")
+                elif response.status_code == 500:
+                    raise Exception("LLM server error. The API may be experiencing issues.")
+                elif response.status_code >= 400:
+                    raise Exception(f"HTTP {response.status_code}: {response.text[:200]}")
+                
+                response.raise_for_status()
+                
+                try:
+                    result = response.json()
+                    return result['choices'][0]['message']['content']
+                except (KeyError, IndexError) as e:
+                    raise Exception(f"Unexpected LLM API response format: {str(e)}")
+                except ValueError:
+                    raise Exception(f"Invalid JSON in LLM API response: {response.text[:200]}")
+                    
+            except requests.Timeout:
+                last_error = Exception(f"LLM API request timed out after {timeout} seconds. The API may be slow or unresponsive.")
+                if attempt < retries:
+                    print(f"  Retry {attempt + 1}/{retries} after timeout...")
+                    continue
+            except requests.ConnectionError as e:
+                last_error = Exception(f"Failed to connect to LLM API: {str(e)}")
+                if attempt < retries:
+                    print(f"  Retry {attempt + 1}/{retries} after connection error...")
+                    continue
+            except requests.RequestException as e:
+                last_error = Exception(f"LLM API request failed: {str(e)}")
+                if attempt < retries:
+                    print(f"  Retry {attempt + 1}/{retries} after request error...")
+                    continue
+            except Exception as e:
+                # Don't retry on other exceptions (like parsing errors)
+                raise
         
-        if response.status_code == 429:
-            raise Exception("Rate limit exceeded. Please wait before making more requests.")
-        elif response.status_code == 500:
-            raise Exception("LLM server error. The API may be experiencing issues.")
-        elif response.status_code >= 400:
-            raise Exception(f"HTTP {response.status_code}: {response.text[:200]}")
-        response.raise_for_status()
-        
-        try:
-            result = response.json()
-            return result['choices'][0]['message']['content']
-        except (KeyError, IndexError) as e:
-            raise Exception(f"Unexpected LLM API response format: {str(e)}")
-        except ValueError:
-            raise Exception(f"Invalid JSON in LLM API response: {response.text[:200]}")
+        # If we exhausted retries, raise the last error
+        if last_error:
+            raise last_error
+        raise Exception("LLM API request failed after all retries")
 
     @staticmethod
     def parse_response(response: str) -> Dict[str, Any]:

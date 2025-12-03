@@ -184,8 +184,12 @@ class ProgressTracker:
     def _save(self):
         """Save progress state to file."""
         try:
-            with open(self.progress_file, 'w', encoding='utf-8') as f:
+            # Write to a temp file first, then rename (atomic operation)
+            temp_file = self.progress_file.with_suffix('.json.tmp')
+            with open(temp_file, 'w', encoding='utf-8') as f:
                 json.dump(self.state, f, indent=2)
+            # Atomic rename (avoids partial writes)
+            temp_file.replace(self.progress_file)
         except Exception as e:
             print(f"Warning: Could not save progress: {e}")
     
@@ -207,7 +211,15 @@ class ProgressTracker:
         
         try:
             with open(progress_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                content = f.read()
+                if not content or content.strip() == '':
+                    print(f"Warning: Progress file is empty for source {source_id}")
+                    return None
+                return json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"Warning: Could not parse progress JSON: {e}")
+            # Try to recover by returning None
+            return None
         except Exception as e:
             print(f"Warning: Could not load progress: {e}")
             return None
