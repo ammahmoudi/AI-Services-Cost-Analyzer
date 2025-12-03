@@ -16,6 +16,8 @@ from datetime import datetime
 from extractors.base import BaseExtractor
 from ai_cost_manager.cache import cache_manager
 from ai_cost_manager.progress_tracker import ProgressTracker
+from ai_cost_manager.llm_extractor import extract_pricing_with_llm
+from ai_cost_manager.model_types import VALID_MODEL_TYPES, get_valid_types_string
 from playwright.sync_api import sync_playwright
 from tqdm import tqdm
 
@@ -651,17 +653,16 @@ class AvalAIExtractor(BaseExtractor):
             if llm_extracted.get('model_type'):
                 llm_model_type = llm_extracted.get('model_type')
                 
-                # Accept only standardized base types from LLM
-                valid_types = ['text-generation', 'image-generation', 'video-generation',
-                              'audio-generation', 'embeddings', 'code-generation', 'chat',
-                              'completion', 'rerank', 'moderation', 'other']
-                
-                if llm_model_type in valid_types:
+                # Accept only standardized broad types from LLM
+                if llm_model_type in VALID_MODEL_TYPES:
                     model_type = llm_model_type
+                else:
+                    print(f"  ⚠️  LLM returned invalid type '{llm_model_type}', keeping original '{model_type}' (expected one of: {get_valid_types_string()})")
             
-            # LLM overrides category
+            # LLM provides specific category (text-to-image, image-to-video, etc.)
             if llm_extracted.get('category'):
                 category_override = llm_extracted.get('category')
+                print(f"  🔍 LLM returned category: {category_override}")
             
             # Override pricing_formula if LLM has a better one
             if llm_extracted.get('pricing_formula'):
@@ -805,13 +806,14 @@ class AvalAIExtractor(BaseExtractor):
     
     def _map_category_to_type(self, category: str) -> str:
         """
-        Map AvalAI category to standard model type.
+        Map AvalAI category to broad model type.
+        Category is preserved separately for specific type.
         
         Args:
             category: AvalAI category string
             
         Returns:
-            Standardized model type
+            Broad model type
         """
         type_map = {
             'chat': 'text-generation',
@@ -824,6 +826,6 @@ class AvalAIExtractor(BaseExtractor):
             'moderation': 'moderation',
             'fine-tuning': 'fine-tuning',
             'search': 'search',
-            'ocr': 'ocr',
+            'ocr': 'text-generation',  # OCR outputs text
         }
         return type_map.get(category, 'other')

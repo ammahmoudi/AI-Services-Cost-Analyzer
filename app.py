@@ -1650,7 +1650,7 @@ def get_model_with_alternatives(model_id):
 
 @app.route('/api/canonical-models', methods=['GET'])
 def get_canonical_models():
-    """Get all canonical models with provider details"""
+    """Get all canonical models with provider details (paginated)"""
     try:
         from ai_cost_manager.model_matching_service import ModelMatchingService
     except ImportError as e:
@@ -1662,12 +1662,23 @@ def get_canonical_models():
     session = get_session()
     try:
         model_type = request.args.get('model_type')
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
         
         service = ModelMatchingService(session)
-        models = service.get_canonical_models(model_type=model_type)
+        all_models = service.get_canonical_models(model_type=model_type)
+        
+        # Paginate
+        total = len(all_models)
+        start = (page - 1) * per_page
+        end = start + per_page
+        models = all_models[start:end]
         
         return jsonify({
-            'total': len(models),
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': (total + per_page - 1) // per_page,
             'models': models
         })
     

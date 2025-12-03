@@ -84,7 +84,13 @@ class APISource(Base):
 
 
 class AIModel(Base):
-    """Represents an AI model with its pricing and metadata"""
+    """Represents an AI model with its pricing and metadata
+    
+    Note: model_type should be validated against VALID_MODEL_TYPES 
+    from ai_cost_manager.model_types module to ensure consistency.
+    This is a broad category (e.g., 'image-generation').
+    The 'category' field holds specific types (e.g., 'text-to-image').
+    """
     __tablename__ = 'ai_models'
     
     id = Column(Integer, primary_key=True)
@@ -94,7 +100,7 @@ class AIModel(Base):
     model_id = Column(String(200), nullable=False)  # e.g., 'fal-ai/flux-pro'
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    model_type = Column(String(50), nullable=True)  # e.g., 'text-to-image', 'text-generation'
+    model_type = Column(String(50), nullable=True)  # Broad type from VALID_MODEL_TYPES (e.g., 'image-generation')
     
     # Pricing
     cost_per_call = Column(Float, default=0.0)
@@ -105,7 +111,7 @@ class AIModel(Base):
     # Additional metadata
     thumbnail_url = Column(Text, nullable=True)
     tags = Column(JSON, default=list)
-    category = Column(String(100), nullable=True)
+    category = Column(String(100), nullable=True)  # Specific type (e.g., 'text-to-image', 'image-to-video') - NOT validated
     
     # Schema information
     input_schema = Column(JSON, nullable=True)
@@ -158,15 +164,19 @@ class CacheEntry(Base):
 
 
 class CanonicalModel(Base):
-    """Represents a canonical/unified model identity across providers"""
+    """Represents a canonical/unified model identity across providers
+    
+    Note: model_type should be validated against VALID_MODEL_TYPES 
+    from ai_cost_manager.model_types module to ensure consistency.
+    """
     __tablename__ = 'canonical_models'
     
     id = Column(Integer, primary_key=True)
     canonical_name = Column(String(200), unique=True, nullable=False)  # e.g., 'flux-dev-1.0'
     display_name = Column(String(200), nullable=False)  # User-friendly name
     description = Column(Text, nullable=True)  # Description of the base model
-    model_type = Column(String(50), nullable=True)  # 'text-to-image', etc.
-    tags = Column(JSON, default=list)
+    model_type = Column(String(50), nullable=True)  # Broad type from VALID_MODEL_TYPES (e.g., 'image-generation')
+    tags = Column(JSON, default=list)  # Flexible tags/categories (e.g., 'text-to-image')
     
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)

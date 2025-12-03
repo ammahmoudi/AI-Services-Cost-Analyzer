@@ -126,19 +126,33 @@ ADDITIONAL CONTEXT:
 {additional_context}
 
 MODEL TYPE DETECTION HINTS:
-- If model name contains "video", "seedance", "mochi", "runway", "sora", "pika", or pricing mentions "video"/"frame"/"fps", use "video-generation"
-- If pricing is per video (e.g., "$0.14/video"), use "video-generation" and pricing_type="per_video"
-- If model name contains "image", "flux", "dall-e", "midjourney", "stable-diffusion", or pricing mentions "image"/"megapixel"/"MP", use "image-generation"
-- If pricing mentions "token" or "per million", use "text-generation" or "chat"
-- For text-to-video, image-to-video models: use "video-generation" and add the specific type (e.g., "text-to-video") to tags array
-- For text-to-image, image-to-image models: use "image-generation" and add the specific type (e.g., "text-to-image") to tags array
-- For image-to-text models: use "text-generation" and add "image-to-text" to tags array
+- Image generation models → model_type: "image-generation", add specific type to category ("text-to-image" or "image-to-image")
+- Video generation models → model_type: "video-generation", add specific type to category ("text-to-video" or "image-to-video")
+- Text generation models → model_type: "text-generation", add specific type to category if applicable ("image-to-text", "audio-to-text")
+- Audio generation models → model_type: "audio-generation"
+- Code generation models → model_type: "code-generation"
+- Embedding models → model_type: "embeddings"
+- Reranking models → model_type: "reranking"
 
 IMPORTANT: Analyze the pricing carefully and return a JSON object with these exact fields:
 
 REQUIRED FIELDS:
-- model_type: MUST be EXACTLY one of these values: "text-generation", "image-generation", "video-generation", "audio-generation", "embeddings", "code-generation", "chat", "completion", "rerank", "moderation", "other"
-  DO NOT use values like "text-to-video", "image-to-video", "text-to-image" - use the base generation type and add specifics to tags
+- model_type: MUST be a BROAD category, one of these values:
+  * "image-generation" (for any image generation/editing)
+  * "video-generation" (for any video generation)
+  * "text-generation" (for LLMs, chat, transcription, OCR, vision)
+  * "code-generation" (for code-specific models)
+  * "audio-generation" (for TTS, music generation)
+  * "embeddings" (for vector embeddings)
+  * "reranking" (for search reranking)
+  * "moderation" (for content moderation)
+  * "other" (if none of above fit)
+
+- category: SPECIFIC type (optional but recommended), one of:
+  * "text-to-image", "image-to-image" (for image models)
+  * "text-to-video", "image-to-video" (for video models)
+  * "image-to-text", "audio-to-text" (for transcription/OCR models)
+  * Or same as model_type if no specific variant
 - pricing_type: MUST be one of: "per_token", "per_image", "per_video", "per_minute", "per_second", "per_call", "hourly", "fixed", "tiered", "per_megapixel"
 - cost_unit: MUST match pricing_type - "token", "image", "video", "minute", "second", "call", "hour", "megapixel"
 - cost_per_call: numeric value in USD for ONE typical call (required, use 0 if unknown)
@@ -161,15 +175,19 @@ PRICING FORMAT EXAMPLES:
 
 2. Image models (megapixels):
    "$0.025/MP | 40.0 img/$1 | 28 steps"
-   → {{"model_type": "image-generation", "pricing_type": "per_image", "cost_unit": "megapixel", "cost_per_call": 0.025, "pricing_variables": {{"price_per_mp": 0.025, "images_per_dollar": 40.0, "default_steps": 28}}, "tags": ["fast", "affordable"]}}
+   → {{"model_type": "image-generation", "category": "text-to-image", "pricing_type": "per_image", "cost_unit": "megapixel", "cost_per_call": 0.025, "pricing_variables": {{"price_per_mp": 0.025, "images_per_dollar": 40.0, "default_steps": 28}}, "tags": ["fast", "affordable"]}}
 
 3. Video models:
    "$0.19 per 5s 720p video"
-   → {{"model_type": "video-generation", "pricing_type": "per_video", "cost_unit": "video", "cost_per_call": 0.19, "pricing_variables": {{"duration_seconds": 5, "resolution": "720p"}}, "tags": ["short-form", "hd"]}}
+   → {{"model_type": "video-generation", "category": "text-to-video", "pricing_type": "per_video", "cost_unit": "video", "cost_per_call": 0.19, "pricing_variables": {{"duration_seconds": 5, "resolution": "720p"}}, "tags": ["short-form", "hd"]}}
 
-3b. Text-to-video models:
-   "AnimateDiff - text to video"
-   → {{"model_type": "video-generation", "pricing_type": "per_video", "cost_unit": "video", "cost_per_call": 0.25, "tags": ["text-to-video", "animation", "ai-generated"]}}
+3b. Image-to-video models:
+   "AnimateDiff - image to video"
+   → {{"model_type": "video-generation", "category": "image-to-video", "pricing_type": "per_video", "cost_unit": "video", "cost_per_call": 0.25, "tags": ["animation", "ai-generated"]}}
+
+3c. Image upscaling models:
+   "Upscale 4x - $0.01 per image"
+   → {{"model_type": "image-generation", "category": "image-to-image", "pricing_type": "per_image", "cost_unit": "image", "cost_per_call": 0.01, "tags": ["upscaling", "enhancement"]}}
 
 4. Audio models:
    "$0.006 per minute"

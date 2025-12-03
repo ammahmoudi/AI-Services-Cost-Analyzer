@@ -15,6 +15,8 @@ from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
 
 from ai_cost_manager.progress_tracker import ProgressTracker
+from ai_cost_manager.llm_extractor import extract_pricing_with_llm
+from ai_cost_manager.model_types import VALID_MODEL_TYPES, get_valid_types_string
 
 
 class RunwareExtractor:
@@ -564,13 +566,40 @@ class RunwareExtractor:
             if not provider and provider_from_air:
                 provider = provider_from_air.capitalize()
             
-            # Map category to model type
+            # Map category to model type (use broad types)
+            # Runware categories: imageInference, videoInference, audioInference
             type_map = {
-                'imageInference': 'image',
-                'videoInference': 'video',
-                'audioInference': 'audio',
+                'imageInference': 'image-generation',
+                'videoInference': 'video-generation',
+                'audioInference': 'audio-generation',
             }
             model_type = type_map.get(category, 'other')
+            
+            # Determine specific category based on model name/AIR
+            air_lower = air.lower()
+            model_name_lower = (model_name or '').lower()
+            combined_text = f"{air_lower} {model_name_lower}"
+            
+            # Default categories by type
+            specific_category = None
+            
+            # Image types
+            if category == 'imageInference':
+                if 'upscale' in combined_text or 'enhance' in combined_text or 'super' in combined_text:
+                    specific_category = 'image-to-image'
+                elif 'remove-background' in air_lower or 'background' in combined_text:
+                    specific_category = 'image-to-image'
+                elif 'control' in combined_text or 'canny' in combined_text or 'depth' in combined_text:
+                    specific_category = 'image-to-image'
+                else:
+                    specific_category = 'text-to-image'  # Default for image generation
+            
+            # Video types
+            elif category == 'videoInference':
+                if 'image-to-video' in air_lower or 'img2vid' in air_lower:
+                    specific_category = 'image-to-video'
+                else:
+                    specific_category = 'text-to-video'  # Default for video generation
             
             # Build pricing dict
             pricing: Dict[str, Optional[float]] = {
@@ -668,6 +697,22 @@ class RunwareExtractor:
                         if llm_extracted:
                             cache_manager.save_llm_extraction("runware", model_id, llm_extracted)
                             
+                            # LLM can override model_type with broad type
+                            if llm_extracted.get('model_type'):
+                                llm_model_type = llm_extracted.get('model_type')
+                                
+                                # Accept only standardized broad types from LLM
+                                if llm_model_type in VALID_MODEL_TYPES:
+                                    model_type = llm_model_type
+                                    print(f"  ✅ LLM updated model_type to: {model_type}")
+                                else:
+                                    print(f"  ⚠️  LLM returned invalid type '{llm_model_type}', ignoring (expected one of: {get_valid_types_string()})")
+                            
+                            # LLM provides specific category
+                            if llm_extracted.get('category'):
+                                specific_category = llm_extracted.get('category')
+                                print(f"  ✅ LLM updated category to: {specific_category}")
+                            
                             # Enhance description with LLM data
                             if llm_extracted.get('description'):
                                 description = llm_extracted['description']
@@ -696,7 +741,8 @@ class RunwareExtractor:
                 'output_cost_per_unit': price if pricing_field.startswith('output_') else None,
                 'cost_unit': cost_unit,
                 **pricing,
-                'tags': [category, air.split(':')[0], model_type],  # Add provider, category, and type as tags
+                'tags': [category, air.split(':')[0], specific_category] if specific_category else [category, air.split(':')[0]],
+                'category': specific_category or model_type,  # Specific category (text-to-image, image-to-video, etc.)
                 'llm_extracted': llm_extracted if llm_extracted else None,
                 'raw_metadata': {
                     'air': air,
@@ -1002,13 +1048,32 @@ class RunwareExtractor:
             # Determine provider
             provider = self._determine_provider(model_name)
             
-            # Map category to model type
+            # Map category to broad model type
             type_map = {
-                'image': 'image',
-                'video': 'video',
+                'image': 'image-generation',
+                'video': 'video-generation',
                 'tool': 'other'
             }
             model_type = type_map.get(category, 'other')
+            
+            # Determine specific category based on model name
+            model_name_lower = model_name.lower()
+            specific_category = None
+            
+            if category == 'image':
+                if 'upscale' in model_name_lower or 'enhance' in model_name_lower:
+                    specific_category = 'image-to-image'
+                elif 'background' in model_name_lower or 'remove' in model_name_lower:
+                    specific_category = 'image-to-image'
+                elif 'control' in model_name_lower:
+                    specific_category = 'image-to-image'
+                else:
+                    specific_category = 'text-to-image'
+            elif category == 'video':
+                if 'image-to-video' in model_name_lower or 'img2vid' in model_name_lower:
+                    specific_category = 'image-to-video'
+                else:
+                    specific_category = 'text-to-video'
 
             # Initialize pricing fields
             input_price_per_token = None
@@ -1054,7 +1119,8 @@ class RunwareExtractor:
                 'output_price_per_second': output_price_per_second,
                 'input_price_per_request': input_price_per_request,
                 'output_price_per_request': output_price_per_request,
-                'tags': [],
+                'tags': [specific_category] if specific_category else [],
+                'category': specific_category or model_type,  # Specific category
                 'description': description
             }
 

@@ -14,6 +14,8 @@ from datetime import datetime
 from extractors.base import BaseExtractor
 from ai_cost_manager.cache import cache_manager
 from ai_cost_manager.progress_tracker import ProgressTracker
+from ai_cost_manager.llm_extractor import extract_pricing_with_llm
+from ai_cost_manager.model_types import VALID_MODEL_TYPES, get_valid_types_string
 from tqdm import tqdm
 import time
 
@@ -300,15 +302,21 @@ class MetisAIExtractor(BaseExtractor):
         if llm_extracted:
             # Override model_type if LLM provides a valid one
             if llm_extracted.get('model_type'):
-                suggested_type = llm_extracted['model_type'].lower()
-                standard_types = ['chat', 'image', 'video', 'audio', 'embedding', 'rerank', 'search', 'other']
-                if suggested_type in standard_types:
-                    model_type_override = suggested_type
+                llm_model_type = llm_extracted['model_type']
+                print(f"  🔍 LLM returned model_type: {llm_model_type} (current: {model_type})")
+                
+                # Accept only standardized broad types from LLM
+                if llm_model_type in VALID_MODEL_TYPES:
+                    model_type_override = llm_model_type
                     model_type = model_type_override
+                    print(f"  ✅ Updated model_type to: {model_type}")
+                else:
+                    print(f"  ⚠️  LLM returned invalid type '{llm_model_type}', ignoring (expected one of: {get_valid_types_string()})")
             
             # Override category if provided
             if llm_extracted.get('category'):
                 category_override = llm_extracted['category']
+                print(f"  🔍 LLM returned category: {category_override}")
             
             # Override pricing_type if provided
             if llm_extracted.get('pricing_type'):
@@ -425,23 +433,23 @@ class MetisAIExtractor(BaseExtractor):
     
     def _map_api_type_to_model_type(self, api_type: str) -> str:
         """
-        Map MetisAI API type to standard model type.
+        Map MetisAI API type to broad model type.
         
         Args:
             api_type: The type from API (llm, embedding, imaginator, etc.)
             
         Returns:
-            Standard model type
+            Broad model type
         """
         type_mapping = {
-            'llm': 'chat',
-            'embedding': 'embedding',
-            'imaginator': 'image',
-            'videonator': 'video',
-            'audiotor': 'audio',
-            'transcriptor': 'audio',
+            'llm': 'text-generation',
+            'embedding': 'embeddings',
+            'imaginator': 'image-generation',
+            'videonator': 'video-generation',
+            'audiotor': 'audio-generation',
+            'transcriptor': 'text-generation',  # Outputs text
             'chunking': 'other',
-            'reranking': 'rerank',
+            'reranking': 'reranking',
             'searching': 'search',
         }
         

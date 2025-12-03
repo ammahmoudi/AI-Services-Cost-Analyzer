@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from ai_cost_manager.llm_client import LLMClient
 from ai_cost_manager.database import get_session
 from ai_cost_manager.models import LLMConfiguration
+from ai_cost_manager.model_types import VALID_MODEL_TYPES
 
 
 @dataclass
@@ -92,9 +93,16 @@ class ModelMatcher:
             return self._match_models_basic(models)
 
         # Group by model type first for efficiency
+        # Model types are validated against VALID_MODEL_TYPES (from model_types.py)
         by_type = {}
         for model in models:
             model_type = model.get('model_type', 'other')
+            
+            # Validate model_type against centralized list
+            if model_type not in VALID_MODEL_TYPES:
+                print(f"⚠️  Invalid model_type '{model_type}' found during matching, treating as 'other'")
+                model_type = 'other'
+            
             if model_type not in by_type:
                 by_type[model_type] = []
             by_type[model_type].append(model)
@@ -157,13 +165,17 @@ Models:
 {json.dumps(model_summaries, indent=2)}
 
 Rules:
-1. Models with identical or very similar names (e.g., "FLUX.1 Dev", "Flux Dev 1.0", "flux-dev") are likely the same
-2. Check provider - different providers often offer the same open-source models
-3. Look at descriptions for clues about the underlying model
-4. Common examples:
-     - "FLUX.1 Dev" / "Flux Dev" / "flux-dev-1.0" → Same model
-     - "SDXL 1.0" / "Stable Diffusion XL" / "sdxl-base-1.0" → Same model
-     - "GPT-4" / "GPT-4-0613" / "gpt-4-turbo" → Different models (different versions)
+1. ONLY match models with VERY similar names - they must be the SAME model, not just similar
+2. Different versions, editions, or variants are DIFFERENT models:
+     - "FLUX.1 Pro" vs "FLUX.1 Dev" → DIFFERENT (pro vs dev)
+     - "FLUX.1.1" vs "FLUX.1" → DIFFERENT (version 1.1 vs 1.0)
+     - "FLUX Schnell" vs "FLUX Dev" → DIFFERENT (schnell vs dev)
+     - "GPT-4" vs "GPT-4-turbo" → DIFFERENT (different variants)
+     - "Kontex" vs "Pro" vs "Ultra" → DIFFERENT (different editions)
+3. Same base model with identical version from different providers → SAME:
+     - "FLUX.1 Dev" / "Flux Dev" / "flux-dev" → SAME (just formatting differences)
+     - "SDXL 1.0" / "Stable Diffusion XL 1.0" → SAME (same base + version)
+4. BE CONSERVATIVE - when in doubt, treat as different models
 
 Return ONLY a JSON array of match groups:
 [
@@ -237,7 +249,7 @@ Models not in any group will be treated as unique.
         return matches
     
     def _are_similar(self, name1: str, name2: str) -> bool:
-        """Check if two normalized names are similar"""
+        """Check if two normalized names are similar (STRICT matching)"""
         if not name1 or not name2:
             return False
         
@@ -245,11 +257,25 @@ Models not in any group will be treated as unique.
         if name1 == name2:
             return True
         
-        # One contains the other (with significant overlap)
+        # Check for version/variant keywords that indicate different models
+        variant_keywords = ['pro', 'dev', 'turbo', 'mini', 'ultra', 'lite', 'plus', 'kontex', 'schnell']
+        name1_parts = set(name1.split())
+        name2_parts = set(name2.split())
+        
+        # If one has a variant keyword the other doesn't, they're different
+        for keyword in variant_keywords:
+            if (keyword in name1_parts) != (keyword in name2_parts):
+                return False
+        
+        # One contains the other - but must be at least 80% overlap
         if name1 in name2 or name2 in name1:
             shorter = min(len(name1), len(name2))
-            if shorter > 5:  # Require meaningful length
+            longer = max(len(name1), len(name2))
+            # Require 80% overlap for meaningful match
+            if shorter / longer >= 0.8 and shorter > 5:
                 return True
+            else:
+                return False
         
         # Check for common tokens
         tokens1 = set(name1.split())

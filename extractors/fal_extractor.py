@@ -435,18 +435,14 @@ class FalAIExtractor(BaseExtractor):
                 llm_model_type = pricing_details.get('model_type')
                 print(f"  🔍 LLM returned model_type: {llm_model_type} (current: {model_type})")
                 
-                # Accept only standardized base types from LLM (as defined in prompt)
-                valid_types = ['text-generation', 'image-generation', 'video-generation',
-                              'audio-generation', 'embeddings', 'code-generation', 'chat',
-                              'completion', 'rerank', 'moderation', 'other']
-                
-                if llm_model_type in valid_types:
+                # Accept only standardized broad types from LLM
+                if llm_model_type in VALID_MODEL_TYPES:
                     model_type = llm_model_type
                     print(f"  ✅ Updated model_type to: {model_type}")
                 else:
-                    print(f"  ⚠️  LLM returned invalid type '{llm_model_type}', ignoring (expected one of: {', '.join(valid_types)})")
+                    print(f"  ⚠️  LLM returned invalid type '{llm_model_type}', ignoring (expected one of: {get_valid_types_string()})")
             
-            # LLM overrides category - better categorization
+            # LLM provides specific category (text-to-image, image-to-video, etc.)
             if pricing_details.get('category'):
                 category = pricing_details.get('category')
                 print(f"  🔍 LLM returned category: {category}")
@@ -546,22 +542,24 @@ class FalAIExtractor(BaseExtractor):
     
     def _map_category_to_type(self, category: str) -> str:
         """
-        Map fal.ai category to standard model type.
+        Map fal.ai category to broad model type.
+        Category is preserved separately for specific type (text-to-image, image-to-video, etc.)
         
         Args:
-            category: fal.ai category string
+            category: fal.ai category string (text-to-image, image-to-video, etc.)
             
         Returns:
-            Standardized model type
+            Broad model type (image-generation, video-generation, etc.)
         """
         category_map = {
-            "text-to-image": "text-to-image",
-            "text-to-video": "text-to-video",
-            "image-to-image": "image-to-image",
-            "image-to-video": "image-to-video",
+            "text-to-image": "image-generation",
+            "image-to-image": "image-generation",
+            "text-to-video": "video-generation",
+            "image-to-video": "video-generation",
             "text-generation": "text-generation",
-            "image-to-text": "image-to-text",
+            "image-to-text": "text-generation",
             "audio-generation": "audio-generation",
+            "audio-to-text": "text-generation",
         }
         return category_map.get(category, "other")
     

@@ -59,13 +59,16 @@
 
 <script>
 let allModels = [];
+let currentPage = 1;
+let totalPages = 1;
+const perPage = 20;
 
 // Load canonical models on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadCanonicalModels();
 });
 
-function loadCanonicalModels(modelType = '') {
+function loadCanonicalModels(modelType = '', page = 1) {
     const loading = document.getElementById('loading');
     const error = document.getElementById('error');
     const noResults = document.getElementById('noResults');
@@ -76,7 +79,7 @@ function loadCanonicalModels(modelType = '') {
     noResults.style.display = 'none';
     grid.style.display = 'none';
     
-    const url = modelType ? `/api/canonical-models?model_type=${modelType}` : '/api/canonical-models';
+    const url = `/api/canonical-models?page=${page}&per_page=${perPage}${modelType ? `&model_type=${modelType}` : ''}`;
     
     fetch(url)
         .then(response => response.json())
@@ -90,13 +93,15 @@ function loadCanonicalModels(modelType = '') {
             }
             
             allModels = data.models || [];
+            currentPage = data.page || 1;
+            totalPages = data.total_pages || 1;
             
             if (allModels.length === 0) {
                 noResults.style.display = 'block';
                 return;
             }
             
-            renderModels(allModels);
+            renderModels(allModels, data.total);
         })
         .catch(err => {
             loading.style.display = 'none';
@@ -105,99 +110,85 @@ function loadCanonicalModels(modelType = '') {
         });
 }
 
-function renderModels(models) {
+function renderModels(models, total) {
     const grid = document.getElementById('modelsGrid');
     const count = document.getElementById('modelCount');
     
-    count.textContent = `Showing ${models.length} unique model${models.length !== 1 ? 's' : ''}`;
+    const start = (currentPage - 1) * perPage + 1;
+    const end = Math.min(currentPage * perPage, total);
+    count.textContent = `Showing ${start}-${end} of ${total} unique model${total !== 1 ? 's' : ''}`;
     
-    let html = '<div style="display: grid; gap: 1.5rem;">';
+    let html = '<div style="display: grid; gap: 1rem;">';
     
     models.forEach(model => {
         const bestPrice = model.best_price;
         const priceDisplay = bestPrice ? `$${bestPrice.cost_per_call.toFixed(6)}` : 'N/A';
-        const priceRange = getPriceRange(model.providers);
         
         html += `
-            <div class="card" style="border: 2px solid #e5e7eb; padding: 0; overflow: hidden;">
-                <!-- Header -->
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; color: white;">
-                    <h3 style="margin: 0 0 0.5rem 0; font-size: 1.25rem;">${model.display_name}</h3>
-                    <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.9rem; opacity: 0.95;">
-                        <span>📦 ${model.provider_count} provider${model.provider_count !== 1 ? 's' : ''}</span>
-                        <span class="badge" style="background: rgba(255,255,255,0.2);">${model.model_type || 'unknown'}</span>
-                        ${priceRange ? `<span>💰 ${priceRange}</span>` : ''}
+            <div class="card" style="border: 1px solid #e5e7eb; padding: 0; overflow: hidden;">
+                <!-- Compact Header -->
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; color: white;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1;">
+                            <h3 style="margin: 0; font-size: 1.1rem;">${model.display_name}</h3>
+                            <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem;">
+                                <span>📦 ${model.provider_count} provider${model.provider_count !== 1 ? 's' : ''}</span>
+                                <span class="badge" style="background: rgba(255,255,255,0.2); padding: 0.15rem 0.5rem;">${model.model_type || 'unknown'}</span>
+                            </div>
+                        </div>
+                        ${bestPrice ? `
+                            <div style="text-align: right; background: rgba(255,255,255,0.15); padding: 0.5rem 1rem; border-radius: 6px;">
+                                <p style="margin: 0; font-size: 0.75rem; opacity: 0.9;">Best Price</p>
+                                <p style="margin: 0; font-size: 1.25rem; font-weight: 700;">${priceDisplay}</p>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
                 
-                <!-- Content -->
-                <div style="padding: 1.5rem;">
-                    ${model.description ? `<p style="color: #4b5563; margin-bottom: 1.5rem;">${model.description}</p>` : ''}
-                    
-                    <!-- Best Price Highlight -->
-                    ${bestPrice ? `
-                        <div style="background: #d1fae5; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid #10b981;">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <p style="color: #065f46; font-size: 0.85rem; margin: 0 0 0.25rem 0;">✓ Best Price</p>
-                                    <p style="color: #047857; font-weight: 600; font-size: 1.1rem; margin: 0;">${bestPrice.provider}</p>
-                                </div>
-                                <div style="text-align: right;">
-                                    <p style="color: #047857; font-size: 1.5rem; font-weight: 700; margin: 0;">${priceDisplay}</p>
-                                    <p style="color: #065f46; font-size: 0.75rem; margin: 0;">per call</p>
-                                </div>
-                            </div>
-                        </div>
-                    ` : ''}
-                    
-                    <!-- All Providers -->
-                    <details ${model.provider_count <= 3 ? 'open' : ''}>
-                        <summary style="cursor: pointer; font-weight: 600; color: #374151; margin-bottom: 1rem;">
-                            All Providers (${model.provider_count})
-                        </summary>
-                        <div style="display: grid; gap: 0.75rem; margin-top: 1rem;">
-                            ${model.providers.map((provider, index) => {
-                                const isBest = bestPrice && provider.model_id === bestPrice.model_id;
-                                const borderColor = isBest ? '#10b981' : '#e5e7eb';
-                                
-                                return `
-                                    <div style="border: 1px solid ${borderColor}; padding: 1rem; border-radius: 6px; background: ${isBest ? '#f0fdf4' : '#ffffff'};">
-                                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                                            <div style="flex: 1;">
-                                                <p style="font-weight: 600; margin: 0 0 0.25rem 0; color: #1f2937;">
-                                                    ${provider.provider}
-                                                    ${isBest ? '<span style="color: #10b981; margin-left: 0.5rem;">✓</span>' : ''}
-                                                </p>
-                                                <p style="color: #6b7280; font-size: 0.85rem; margin: 0;">
-                                                    Confidence: ${(provider.confidence * 100).toFixed(0)}%
-                                                </p>
-                                            </div>
-                                            <div style="text-align: right; margin-right: 1rem;">
-                                                <p style="font-size: 1.25rem; font-weight: 600; color: ${isBest ? '#10b981' : '#2563eb'}; margin: 0;">
-                                                    $${provider.cost_per_call ? provider.cost_per_call.toFixed(6) : 'N/A'}
-                                                </p>
-                                            </div>
-                                            <a href="/models/${provider.model_id}" class="btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">
-                                                View
-                                            </a>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    </details>
-                    
-                    <!-- Tags -->
-                    ${model.tags && model.tags.length > 0 ? `
-                        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e5e7eb;">
-                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                                ${model.tags.slice(0, 5).map(tag => `
-                                    <span class="badge badge-gray">${tag}</span>
-                                `).join('')}
-                                ${model.tags.length > 5 ? `<span class="badge badge-gray">+${model.tags.length - 5} more</span>` : ''}
-                            </div>
-                        </div>
-                    ` : ''}
+                <!-- Compact Content -->
+                <div style="padding: 1rem;">
+                    <!-- Providers (Compact Table) -->
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid #e5e7eb;">
+                                    <th style="text-align: left; padding: 0.5rem; color: #6b7280;">Provider</th>
+                                    <th style="text-align: right; padding: 0.5rem; color: #6b7280;">Price/Call</th>
+                                    <th style="text-align: center; padding: 0.5rem; color: #6b7280;">Confidence</th>
+                                    <th style="text-align: right; padding: 0.5rem;"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${model.providers.slice(0, 5).map((provider, index) => {
+                                    const isBest = index === 0 && provider.cost_per_call;
+                                    return `
+                                        <tr style="border-bottom: 1px solid #f3f4f6; ${isBest ? 'background: #f0fdf4;' : ''}">
+                                            <td style="padding: 0.5rem; font-weight: 500;">
+                                                ${provider.provider}
+                                                ${isBest ? '<span style="color: #10b981; margin-left: 0.25rem;">✓</span>' : ''}
+                                            </td>
+                                            <td style="padding: 0.5rem; text-align: right; font-weight: 600; color: ${isBest ? '#10b981' : '#2563eb'};">
+                                                $${provider.cost_per_call ? provider.cost_per_call.toFixed(6) : 'N/A'}
+                                            </td>
+                                            <td style="padding: 0.5rem; text-align: center; color: #6b7280;">
+                                                ${(provider.confidence * 100).toFixed(0)}%
+                                            </td>
+                                            <td style="padding: 0.5rem; text-align: right;">
+                                                <a href="/models/${provider.model_id}" class="btn-sm">View</a>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                                ${model.provider_count > 5 ? `
+                                    <tr>
+                                        <td colspan="4" style="padding: 0.5rem; text-align: center; color: #6b7280; font-size: 0.85rem;">
+                                            + ${model.provider_count - 5} more provider${model.provider_count - 5 !== 1 ? 's' : ''}
+                                        </td>
+                                    </tr>
+                                ` : ''}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         `;
@@ -205,30 +196,44 @@ function renderModels(models) {
     
     html += '</div>';
     
+    // Add pagination
+    if (totalPages > 1) {
+        html += `
+            <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; margin-top: 2rem; padding: 1rem;">
+                <button onclick="changePage(${currentPage - 1})" 
+                        ${currentPage === 1 ? 'disabled' : ''} 
+                        class="btn" style="padding: 0.5rem 1rem;">
+                    ← Previous
+                </button>
+                <span style="color: #6b7280;">
+                    Page ${currentPage} of ${totalPages}
+                </span>
+                <button onclick="changePage(${currentPage + 1})" 
+                        ${currentPage === totalPages ? 'disabled' : ''} 
+                        class="btn" style="padding: 0.5rem 1rem;">
+                    Next →
+                </button>
+            </div>
+        `;
+    }
+    
     grid.innerHTML = html;
     grid.style.display = 'block';
 }
 
-function getPriceRange(providers) {
-    const prices = providers
-        .map(p => p.cost_per_call)
-        .filter(p => p && p > 0)
-        .sort((a, b) => a - b);
-    
-    if (prices.length === 0) return null;
-    if (prices.length === 1) return `$${prices[0].toFixed(6)}`;
-    
-    const min = prices[0];
-    const max = prices[prices.length - 1];
-    
-    return `$${min.toFixed(6)} - $${max.toFixed(6)}`;
+function changePage(page) {
+    if (page < 1 || page > totalPages) return;
+    const select = document.getElementById('typeFilter');
+    const selectedType = select.value;
+    loadCanonicalModels(selectedType, page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function filterByType() {
     const select = document.getElementById('typeFilter');
     const selectedType = select.value;
     
-    loadCanonicalModels(selectedType);
+    loadCanonicalModels(selectedType, 1);
 }
 
 function runModelMatching() {
@@ -321,6 +326,31 @@ function runModelMatching() {
 .btn:disabled {
     background: #9ca3af;
     cursor: not-allowed;
+}
+
+.btn-sm {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 0.85rem;
+}
+
+.btn-sm:hover {
+    background: #1d4ed8;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+tbody tr:hover {
+    background: #f9fafb !important;
 }
 </style>
 {% endblock %}

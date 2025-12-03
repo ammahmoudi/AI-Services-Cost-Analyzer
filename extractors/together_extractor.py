@@ -647,18 +647,14 @@ class TogetherAIExtractor(BaseExtractor):
                 llm_model_type = llm_extracted.get('model_type')
                 print(f"  🔍 LLM returned model_type: {llm_model_type} (current: {model_type})")
                 
-                # Accept only standardized base types from LLM (as defined in prompt)
-                valid_types = ['text-generation', 'image-generation', 'video-generation', 
-                              'audio-generation', 'embeddings', 'code-generation', 'chat',
-                              'completion', 'rerank', 'moderation', 'other']
-                
-                if llm_model_type in valid_types:
+                # Accept only standardized broad types from LLM
+                if llm_model_type in VALID_MODEL_TYPES:
                     model_type = llm_model_type
                     print(f"  ✅ Updated model_type to: {model_type}")
                 else:
-                    print(f"  ⚠️  LLM returned invalid type '{llm_model_type}', ignoring (expected one of: {', '.join(valid_types)})")
+                    print(f"  ⚠️  LLM returned invalid type '{llm_model_type}', ignoring (expected one of: {get_valid_types_string()})")
             
-            # Override category - LLM can provide better categorization
+            # Override category - LLM can provide specific categorization
             if llm_extracted.get('category'):
                 category_override = llm_extracted.get('category')
                 print(f"  🔍 LLM returned category: {category_override}")
@@ -797,13 +793,13 @@ class TogetherAIExtractor(BaseExtractor):
     
     def _map_type_to_category(self, model_type: str) -> str:
         """
-        Map Together AI model type to standard category.
+        Map Together AI model type to broad category.
         
         Args:
             model_type: Together AI model type
             
         Returns:
-            Standardized model type
+            Broad model type
         """
         type_map = {
             'chat': 'text-generation',

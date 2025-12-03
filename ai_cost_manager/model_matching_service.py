@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from ai_cost_manager.models import AIModel, CanonicalModel, ModelMatch, APISource
 from ai_cost_manager.model_matcher import ModelMatcher
+from ai_cost_manager.model_types import VALID_MODEL_TYPES
 from datetime import datetime
 
 
@@ -88,11 +89,17 @@ class ModelMatchingService:
                 if not best_model:
                     best_model = match.models[0]
                 
+                # Validate and use model_type from VALID_MODEL_TYPES
+                model_type = best_model.get('model_type')
+                if model_type not in VALID_MODEL_TYPES:
+                    print(f"⚠️  Invalid model_type '{model_type}' for canonical model, defaulting to 'other'")
+                    model_type = 'other'
+                
                 canonical = CanonicalModel(
                     canonical_name=match.canonical_name,
                     display_name=match.canonical_name.replace('-', ' ').title(),
                     description=best_model.get('description', ''),
-                    model_type=best_model.get('model_type'),
+                    model_type=model_type,
                     tags=list(set([tag for m in match.models for tag in (m.get('tags') or [])]))
                 )
                 self.session.add(canonical)
