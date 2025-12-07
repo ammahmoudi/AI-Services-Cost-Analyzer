@@ -25,10 +25,18 @@
         <label for="typeFilter" style="font-weight: 600;">Filter by Type:</label>
         <select id="typeFilter" onchange="filterByType()" style="padding: 0.5rem; border-radius: 4px; border: 1px solid #d1d5db;">
             <option value="">All Types</option>
-            <option value="image">Image</option>
-            <option value="text">Text (LLM)</option>
-            <option value="video">Video</option>
-            <option value="audio">Audio</option>
+            <option value="text-generation">Text Generation</option>
+            <option value="image-generation">Image Generation</option>
+            <option value="video-generation">Video Generation</option>
+            <option value="audio-generation">Audio Generation</option>
+            <option value="model-3d">3D Models</option>
+            <option value="embeddings">Embeddings</option>
+            <option value="code-generation">Code Generation</option>
+            <option value="reranking">Reranking</option>
+            <option value="moderation">Moderation</option>
+            <option value="search">Search</option>
+            <option value="training">Training</option>
+            <option value="detection">Detection</option>
             <option value="other">Other</option>
         </select>
         
@@ -139,7 +147,43 @@
     </div>
 </div>
 
-<!-- Create Canonical Model Modal -->
+<!-- Model Matching Progress Modal -->
+<div id="matchingProgressModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 500px; width: 90%;">
+        <h3 style="margin: 0 0 1.5rem 0;">🤖 Model Matching in Progress</h3>
+        
+        <div style="margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="font-weight: 600;">Progress</span>
+                <span id="matchingProgressText">0%</span>
+            </div>
+            <div style="width: 100%; background: #e5e7eb; border-radius: 4px; overflow: hidden; height: 24px;">
+                <div id="matchingProgressBar" style="width: 0%; background: linear-gradient(90deg, #10b981, #059669); height: 100%; transition: width 0.3s ease;"></div>
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 1rem;">
+            <div style="display: flex; justify-content: space-between; color: #6b7280; font-size: 0.9rem;">
+                <span>Processing:</span>
+                <span id="matchingCurrentType">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; color: #6b7280; font-size: 0.9rem;">
+                <span>Models:</span>
+                <span id="matchingModelCount">0 / 0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; color: #6b7280; font-size: 0.9rem;">
+                <span>Matches Found:</span>
+                <span id="matchingMatchCount">0</span>
+            </div>
+        </div>
+        
+        <div id="matchingStatusMessage" style="padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 0.9rem; color: #4b5563; text-align: center;">
+            Initializing...
+        </div>
+    </div>
+</div>
+
+<!-- Edit Canonical Model Modal -->
 <div id="createCanonicalModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
     <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
         <h3 style="margin: 0 0 1.5rem 0;">➕ Create New Unified Model</h3>
@@ -383,7 +427,7 @@ function changePage(page) {
 function filterByType() {
     const select = document.getElementById('typeFilter');
     const selectedType = select.value;
-    
+    currentPage = 1; // Reset to first page when filtering
     loadCanonicalModels(selectedType, 1);
 }
 
@@ -398,6 +442,9 @@ function runModelMatching() {
     btn.disabled = true;
     btn.innerHTML = '⏳ Matching...';
     
+    // Show progress modal
+    showMatchingProgressModal();
+    
     fetch('/api/match-models', {
         method: 'POST',
         headers: {
@@ -408,10 +455,15 @@ function runModelMatching() {
     .then(response => response.json())
     .then(data => {
         if (data.error) {
+            closeMatchingProgressModal();
             alert('Error: ' + data.error);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
         } else if (data.status === 'already_matched') {
+            closeMatchingProgressModal();
             if (confirm(`Models are already matched (${data.existing_matches} matches). Re-match anyway?`)) {
                 // Re-run with force refresh
+                showMatchingProgressModal();
                 return fetch('/api/match-models', {
                     method: 'POST',
                     headers: {
@@ -430,6 +482,7 @@ function runModelMatching() {
     })
     .then(data => {
         if (data) {
+            closeMatchingProgressModal();
             alert(`✓ Model matching complete!\n\nCanonical Models: ${data.canonical_models_created}\nMatches Created: ${data.model_matches_created}\nModels Processed: ${data.total_models_processed}`);
             loadCanonicalModels();
         }
@@ -437,11 +490,62 @@ function runModelMatching() {
         btn.innerHTML = originalText;
     })
     .catch(error => {
+        closeMatchingProgressModal();
         alert('Error: ' + error);
         btn.disabled = false;
         btn.innerHTML = originalText;
     });
 }
+
+function showMatchingProgressModal() {
+    const modal = document.getElementById('matchingProgressModal');
+    modal.style.display = 'flex';
+    
+    // Reset progress
+    document.getElementById('matchingProgressBar').style.width = '0%';
+    document.getElementById('matchingProgressText').textContent = '0%';
+    document.getElementById('matchingCurrentType').textContent = '-';
+    document.getElementById('matchingModelCount').textContent = '0 / 0';
+    document.getElementById('matchingMatchCount').textContent = '0';
+    document.getElementById('matchingStatusMessage').textContent = 'Starting model matching...';
+    
+    // Start polling for progress (simulated - you can implement real progress tracking)
+    pollMatchingProgress();
+}
+
+function closeMatchingProgressModal() {
+    const modal = document.getElementById('matchingProgressModal');
+    modal.style.display = 'none';
+}
+
+let matchingProgressInterval;
+function pollMatchingProgress() {
+    // Simulated progress - in real implementation, poll a backend endpoint
+    let progress = 0;
+    clearInterval(matchingProgressInterval);
+    
+    matchingProgressInterval = setInterval(() => {
+        progress += 5;
+        if (progress > 95) {
+            clearInterval(matchingProgressInterval);
+            progress = 95;
+        }
+        
+        document.getElementById('matchingProgressBar').style.width = progress + '%';
+        document.getElementById('matchingProgressText').textContent = progress + '%';
+        
+        if (progress < 30) {
+            document.getElementById('matchingStatusMessage').textContent = 'Analyzing models by type...';
+        } else if (progress < 60) {
+            document.getElementById('matchingStatusMessage').textContent = 'Using AI to identify matches...';
+        } else if (progress < 90) {
+            document.getElementById('matchingStatusMessage').textContent = 'Creating canonical models...';
+        } else {
+            document.getElementById('matchingStatusMessage').textContent = 'Finalizing...';
+        }
+    }, 500);
+}
+
 
 function showEditCanonicalModal(canonicalId) {
     fetch(`/api/canonical-models/${canonicalId}`)

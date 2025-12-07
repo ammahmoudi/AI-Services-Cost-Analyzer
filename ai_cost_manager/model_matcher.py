@@ -139,14 +139,47 @@ class ModelMatcher:
             try:
                 matches = self._llm_match_request_unified(model_type, model_summaries)
 
-                # Build ModelMatch objects
+                # Track which models have been matched
+                matched_indices = set()
+                
+                # Build ModelMatch objects from LLM groups
                 for match_group in matches:
-                    matched_models = [type_models[i] for i in match_group['indices']]
+                    # Skip if match_group is not a dict (LLM returned malformed data)
+                    if not isinstance(match_group, dict):
+                        continue
+                    
+                    # Ensure indices is a list
+                    indices = match_group.get('indices', [])
+                    if not isinstance(indices, list):
+                        # If single integer, wrap it in a list
+                        indices = [indices] if isinstance(indices, int) else []
+                    
+                    # Validate indices are within range
+                    valid_indices = [i for i in indices if isinstance(i, int) and 0 <= i < len(type_models)]
+                    
+                    if not valid_indices:
+                        print(f"⚠️  Skipping match group with invalid indices: {match_group}")
+                        continue
+                    
+                    # Mark these indices as matched
+                    matched_indices.update(valid_indices)
+                    
+                    matched_models = [type_models[i] for i in valid_indices]
                     all_matches.append(ModelMatch(
-                        canonical_name=match_group['canonical_name'],
+                        canonical_name=match_group.get('canonical_name', 'unknown'),
                         confidence=match_group.get('confidence', 0.9),
                         models=matched_models
                     ))
+                
+                # Add unmatched models as individual entries (preserve their model_type)
+                for i, model in enumerate(type_models):
+                    if i not in matched_indices:
+                        all_matches.append(ModelMatch(
+                            canonical_name=model.get('name', model.get('model_id', 'unknown')),
+                            confidence=1.0,
+                            models=[model]
+                        ))
+                        
             except Exception as e:
                 print(f"LLM matching failed for {model_type}: {e}")
                 # Fallback to basic matching
@@ -200,15 +233,21 @@ Models not in any group will be treated as unique.
             llm_client = LLMClient(self.config)
             response = llm_client.chat(prompt, temperature=0.3, max_tokens=800)
             parsed = llm_client.parse_response(response)
+            
             # Handle different response formats
             if isinstance(parsed, dict) and 'matches' in parsed:
                 return parsed['matches']
             elif isinstance(parsed, list):
-                return parsed
+                # Validate that list contains dicts with proper structure
+                valid_groups = []
+                for item in parsed:
+                    if isinstance(item, dict) and 'indices' in item and 'canonical_name' in item:
+                        valid_groups.append(item)
+                return valid_groups
             elif isinstance(parsed, dict) and 'groups' in parsed:
                 return parsed['groups']
             else:
-                print(f"Unexpected LLM response format: {parsed}")
+                print(f"⚠️  Unexpected LLM response format: {type(parsed)}")
                 return []
         except Exception as e:
             print(f"LLM request failed: {e}")

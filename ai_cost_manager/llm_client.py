@@ -100,27 +100,80 @@ class LLMClient:
         from ai_cost_manager.model_types import normalize_model_type
         
         response = response.strip()
-        if response.startswith('```'):
-            lines = response.split('\n')
-            response = '\n'.join(lines[1:-1])
-        if response.startswith('```json'):
-            response = response[7:]
+        
+        # Remove markdown code blocks
+        if '```' in response:
+            # Extract content between code fences
+            import re
+            code_block = re.search(r'```(?:json)?\s*([\s\S]*?)```', response)
+            if code_block:
+                response = code_block.group(1).strip()
+        
+        response = response.strip()
+        
         try:
             data = json.loads(response)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            # Try to extract JSON from text - be more aggressive
             import re
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-            else:
-                raise
+            
+            # First, try to find a complete JSON array
+            # Look for [ ... ] with proper nesting
+            array_matches = list(re.finditer(r'\[', response))
+            for match in array_matches:
+                start = match.start()
+                # Try to parse from this position
+                try:
+                    # Find the matching closing bracket
+                    depth = 0
+                    for i in range(start, len(response)):
+                        if response[i] == '[':
+                            depth += 1
+                        elif response[i] == ']':
+                            depth -= 1
+                            if depth == 0:
+                                # Found matching bracket
+                                json_str = response[start:i+1]
+                                data = json.loads(json_str)
+                                return data
+                except:
+                    continue
+            
+            # Fall back to finding a JSON object
+            object_matches = list(re.finditer(r'\{', response))
+            for match in object_matches:
+                start = match.start()
+                try:
+                    depth = 0
+                    for i in range(start, len(response)):
+                        if response[i] == '{':
+                            depth += 1
+                        elif response[i] == '}':
+                            depth -= 1
+                            if depth == 0:
+                                json_str = response[start:i+1]
+                                data = json.loads(json_str)
+                                # Normalize and return
+                                if isinstance(data, dict) and 'model_type' in data and data['model_type']:
+                                    original_type = data['model_type']
+                                    normalized = normalize_model_type(original_type)
+                                    if normalized != original_type:
+                                        print(f"      [parse_response] Normalized model_type: '{original_type}' → '{normalized}'")
+                                    data['model_type'] = normalized
+                                return data
+                except:
+                    continue
+            
+            # Nothing worked
+            raise ValueError(f"Could not extract valid JSON from response. First 200 chars: {response[:200]}")
         
-        # Normalize model_type if present to canonical value
-        if 'model_type' in data and data['model_type']:
-            original_type = data['model_type']
-            normalized = normalize_model_type(original_type)
-            if normalized != original_type:
-                print(f"      [parse_response] Normalized model_type: '{original_type}' → '{normalized}'")
-            data['model_type'] = normalized
+        # Normalize model_type if present to canonical value (for dict responses)
+        if isinstance(data, dict):
+            if 'model_type' in data and data['model_type']:
+                original_type = data['model_type']
+                normalized = normalize_model_type(original_type)
+                if normalized != original_type:
+                    print(f"      [parse_response] Normalized model_type: '{original_type}' → '{normalized}'")
+                data['model_type'] = normalized
         
         return data
