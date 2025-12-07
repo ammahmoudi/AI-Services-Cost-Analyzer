@@ -148,6 +148,12 @@ class ModelMatcher:
                     if not isinstance(match_group, dict):
                         continue
                     
+                    # Check confidence threshold - only accept high-confidence matches
+                    confidence = match_group.get('confidence', 0.0)
+                    if confidence < 0.9:
+                        print(f"⚠️  Skipping low-confidence match ({confidence}): {match_group.get('canonical_name', 'unknown')}")
+                        continue
+                    
                     # Ensure indices is a list
                     indices = match_group.get('indices', [])
                     if not isinstance(indices, list):
@@ -161,13 +167,18 @@ class ModelMatcher:
                         print(f"⚠️  Skipping match group with invalid indices: {match_group}")
                         continue
                     
+                    # Only match if we have at least 2 models (no point matching single model)
+                    if len(valid_indices) < 2:
+                        print(f"⚠️  Skipping single-model match group: {match_group.get('canonical_name', 'unknown')}")
+                        continue
+                    
                     # Mark these indices as matched
                     matched_indices.update(valid_indices)
                     
                     matched_models = [type_models[i] for i in valid_indices]
                     all_matches.append(ModelMatch(
                         canonical_name=match_group.get('canonical_name', 'unknown'),
-                        confidence=match_group.get('confidence', 0.9),
+                        confidence=confidence,
                         models=matched_models
                     ))
                 
@@ -189,45 +200,56 @@ class ModelMatcher:
 
     def _llm_match_request_unified(self, model_type: str, model_summaries: List[Dict]) -> List[Dict]:
         """Make LLM request to match models using the shared LLMClient utility"""
-        prompt = f"""You are an AI model expert. I have a list of {model_type} models from different providers.
-Some of these models are actually the same underlying model offered by different providers.
+        prompt = f"""You are an AI model expert tasked with identifying IDENTICAL models from different providers.
 
-Your task: Group together models that represent the same underlying AI model.
+⚠️ CRITICAL: Only match models if they are the EXACT SAME model, just hosted by different providers.
 
-Models:
+Models to analyze:
 {json.dumps(model_summaries, indent=2)}
 
-Rules:
-1. ONLY match models with VERY similar names - they must be the SAME model, not just similar
-2. Different versions, editions, or variants are DIFFERENT models:
-     - "FLUX.1 Pro" vs "FLUX.1 Dev" → DIFFERENT (pro vs dev)
-     - "FLUX.1.1" vs "FLUX.1" → DIFFERENT (version 1.1 vs 1.0)
-     - "FLUX Schnell" vs "FLUX Dev" → DIFFERENT (schnell vs dev)
-     - "GPT-4" vs "GPT-4-turbo" → DIFFERENT (different variants)
-     - "Kontex" vs "Pro" vs "Ultra" → DIFFERENT (different editions)
-3. Same base model with identical version from different providers → SAME:
-     - "FLUX.1 Dev" / "Flux Dev" / "flux-dev" → SAME (just formatting differences)
-     - "SDXL 1.0" / "Stable Diffusion XL 1.0" → SAME (same base + version)
-4. BE CONSERVATIVE - when in doubt, treat as different models
+🔴 STRICT MATCHING RULES:
 
-Return ONLY a JSON array of match groups:
+1. **Version Numbers Matter**:
+   - "FLUX.1" ≠ "FLUX.1.1" (different versions)
+   - "FLUX 1" ≠ "FLUX 2" (different versions)
+   - "GPT-4" ≠ "GPT-4.5" (different versions)
+   
+2. **Edition/Variant Keywords Matter**:
+   - "FLUX.1 Pro" ≠ "FLUX.1 Dev" (Pro ≠ Dev)
+   - "FLUX.1.1 Pro" ≠ "FLUX.1.1" (one has Pro, one doesn't)
+   - "Schnell" ≠ "Dev" ≠ "Pro" (different editions)
+   - "Turbo" ≠ "Standard" (different variants)
+   - "Ultra" ≠ "Pro" ≠ "Kontex" (different tiers)
+
+3. **Only Match Exact Same Model**:
+   ✅ MATCH: "FLUX.1.1 [pro]" + "Flux 1.1 Pro" + "flux-1-1-pro" (same model, formatting differences)
+   ✅ MATCH: "SDXL 1.0" + "Stable Diffusion XL 1.0" (same model, full vs abbreviation)
+   ❌ DON'T MATCH: "FLUX.1 Pro" + "FLUX.1 Dev" (different editions)
+   ❌ DON'T MATCH: "FLUX.1.1 Pro" + "FLUX.1 Pro" (different versions)
+   ❌ DON'T MATCH: "GPT-4" + "GPT-4-turbo" (different variants)
+
+4. **Check ALL Parts of the Name**:
+   - Base name must match (FLUX = FLUX, GPT-4 = GPT-4)
+   - Version must match exactly (1.1 = 1.1, but 1.1 ≠ 1.0)
+   - Edition/variant must match (Pro = Pro, Dev = Dev, Schnell = Schnell)
+   - If one has edition keyword and other doesn't → DON'T MATCH
+
+5. **When in Doubt → DON'T MATCH**:
+   - If you're not 95%+ confident they're identical → treat as different
+   - Missing information → treat as different
+   - Ambiguous naming → treat as different
+
+✅ Return ONLY a JSON array of match groups (or empty array [] if no matches):
 [
     {{
-        "canonical_name": "flux-dev-1.0",
-        "indices": [0, 3, 7],
-        "confidence": 0.95,
-        "reasoning": "All are FLUX.1 Dev model"
-    }},
-    {{
-        "canonical_name": "sdxl-1.0",
-        "indices": [1, 5],
-        "confidence": 0.9,
-        "reasoning": "Both are SDXL 1.0"
+        "canonical_name": "flux-1-1-pro",
+        "indices": [2, 5, 9],
+        "confidence": 0.98,
+        "reasoning": "All three are FLUX.1.1 Pro - same base, version, and edition"
     }}
 ]
 
-Only group models you're confident are the same (confidence > 0.8).
-Models not in any group will be treated as unique.
+⚠️ Only include groups with confidence > 0.9. Models not grouped will remain separate.
 """
         try:
             llm_client = LLMClient(self.config)
