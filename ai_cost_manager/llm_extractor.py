@@ -55,6 +55,7 @@ class LLMPricingExtractor:
     def _build_prompt(self, model_data: Dict[str, Any]) -> str:
         """Build prompt for LLM"""
         model_name = model_data.get('name', 'Unknown')
+        model_description = model_data.get('description', '')
         pricing_info = model_data.get('pricing_info', '')
         credits = model_data.get('creditsRequired', 0)
         model_type = model_data.get('model_type', 'other')
@@ -118,88 +119,112 @@ class LLMPricingExtractor:
         prompt = f"""Extract pricing information from this AI model data and return a JSON object.
 
 Model Name: {model_name}
-Model Type: {model_type}
+Model Description: {model_description}
+Current Type: {model_type}
 Credits Required: {credits}
 Pricing Info Text: "{pricing_info}"
 
 ADDITIONAL CONTEXT:
 {additional_context}
 
-MODEL TYPE DETECTION HINTS (analyze model name and description carefully):
+CRITICAL TYPE DETECTION RULES (check ALL signals, not just name):
 
-1. 3D MODELS → model_type: "3d-generation"
-   Names: Hyper3D, Meshy, TripoSR, 3D, Shap-E, Point-E, InstantMesh
-   Keywords: 3d, mesh, point cloud, nerf, gaussian splatting
-   Categories: "text-to-3d", "image-to-3d", "mesh-generation"
+IMPORTANT: Check the ADDITIONAL CONTEXT section above for Categories/Tags! If you see "3D" anywhere in the categories or tags, it's a 3D model!
 
-2. DETECTION MODELS → model_type: "detection"
-   Names: SAM, YOLO, Segment Anything, GroundingDINO, Detectron
-   Keywords: detection, segmentation, tracking, pose, keypoint
-   Categories: "object-detection", "segmentation", "sam", "yolo", "pose-detection"
+1. **3D MODELS** → "model-3d"
+   ✓ Name contains: 3D, Hyper3D, Meshy, TripoSR, Shap-E, Point-E, InstantMesh, Part, Hunyuan
+   ✓ Description mentions: 3d, mesh, point cloud, nerf, gaussian splatting, 3D files
+   ✓ Categories/Tags contain: 3D, 3D-to-3D, text-to-3d, image-to-3d, mesh-generation, point-cloud, point cloud
+   ⚠️ PRIORITY: If Categories/Tags mention "3D" anywhere, return "model-3d" (NOT "other")!
 
-3. TRAINING MODELS → model_type: "training"
-   Names: LoRA, DreamBooth, Fine-tune, Training
-   Keywords: training, fine-tuning, lora, adapter, custom model
-   Categories: "fine-tuning", "lora-training", "dreambooth", "custom-training"
+2. **TRAINING MODELS** → model_type: "training"
+   ✓ Name contains: LoRA, DreamBooth, Fine-tune, Training, Trainer, Adapter, Qwen, Custom
+   ✓ Description mentions: train, fine-tuning, custom model, adapter, lora
+   ✓ Category: fine-tuning, lora-training, dreambooth, custom-training, image-trainer
+   ✗ NOT if name contains: generate, generation (those are for image/video generation)
 
-4. IMAGE MODELS → model_type: "image-generation"
-   Names: FLUX, Stable Diffusion, DALL-E, Midjourney, Imagen
-   Keywords: image, picture, photo, art, draw
-   Categories: "text-to-image", "image-to-image", "inpainting", "upscaling"
+4. **MODERATION** → "moderation"
+   ✓ Name contains: NSFW, Moderation, Safety, Filter, Content Filter
+   ✓ Description mentions: moderation, safety, inappropriate, filter content
+   ✓ Category: content-moderation, nsfw-detection, safety-filter
+   ⚠️  PRIORITY: Check this BEFORE audio/video types
 
-5. VIDEO MODELS → model_type: "video-generation"
-   Names: RunwayML, Pika, Sora, AnimateDiff, SVD
-   Keywords: video, animation, motion, frames
-   Categories: "text-to-video", "image-to-video", "video-editing"
+5. **IMAGE GENERATION** → "image-generation"
+   ✓ Name contains: FLUX, Stable Diffusion, DALL-E, Midjourney, Imagen, Kandinsky
+   ✓ Description mentions: image generation, create images, photo, art
+   ✓ Category: text-to-image, image-to-image, inpainting, upscaling
+   ✗ NOT if name is about detection/moderation
 
-6. CODE MODELS → model_type: "code-generation"
-   Names: CodeLlama, StarCoder, Codex, Replit, CodeGen
-   Keywords: code, programming, developer, function
-   Categories: "code-completion", "code-generation"
+6. **VIDEO GENERATION** → "video-generation"
+   ✓ Name contains: Runway, Pika, Sora, AnimateDiff, SVD, Video
+   ✓ Description mentions: video generation, animation, motion
+   ✓ Category: text-to-video, image-to-video, video-editing
+   ✗ NOT if name is about detection/moderation
 
-7. TEXT/LLM MODELS → model_type: "text-generation"
-   Names: GPT, Claude, Llama, Mistral, Gemini
-   Keywords: chat, text, language, completion
-   Categories: "chat", "completion", "vision" (if accepts images)
+7. **AUDIO GENERATION** → "audio-generation"
+   ✓ Name contains: ElevenLabs, Whisper, Bark, MusicGen, TTS, Speech
+   ✓ Description mentions: audio, speech, voice, music, sound generation
+   ✓ Category: text-to-speech, speech-to-text, music-generation
+   ✗ NOT if name just contains random words
 
-8. AUDIO MODELS → model_type: "audio-generation"
-   Names: ElevenLabs, Whisper, Bark, MusicGen
-   Keywords: audio, speech, voice, music, sound
-   Categories: "text-to-speech", "speech-to-text", "music-generation"
+8. **CODE GENERATION** → "code-generation"
+   ✓ Name contains: Code, CodeLlama, StarCoder, Codex, Replit, CodeGen
+   ✓ Description mentions: code, programming, developer
+   ✓ Category: code-completion, code-generation
 
-9. EMBEDDINGS → model_type: "embeddings"
-   Names: text-embedding, CLIP, E5, BGE
-   Keywords: embedding, vector, semantic
+9. **TEXT/LLM** → "text-generation"
+   ✓ Name contains: GPT, Claude, Llama, Mistral, Gemini, Chat, LLM
+   ✓ Description mentions: language model, chat, text generation
+   ✓ Category: chat, completion, vision (if accepts images)
 
-10. RERANKING → model_type: "reranking"
-    Names: rerank, cross-encoder
-    Keywords: rerank, relevance
+10. **EMBEDDINGS** → "embeddings"
+    ✓ Name contains: embedding, CLIP, E5, BGE, embed
+    ✓ Description mentions: vector, embedding, semantic search
+
+11. **RERANKING** → "reranking"
+    ✓ Name contains: rerank, cross-encoder
+    ✓ Description mentions: reranking, relevance scoring
+
+12. **SEARCH** → "search"
+    ✓ Name contains: search, retrieval
+    ✓ Description mentions: search engine, information retrieval
+
+DETECTION PRIORITY (check in this order):
+1. First: Is it MODERATION/NSFW filter? → "moderation"
+2. Second: Is it TRAINING model? → "training" (includes fine-tuning, LoRA, custom trainers)
+3. Third: Is it 3D model? → "model-3d"
+4. Fourth: Is it DETECTION/SEGMENTATION? → "detection"
+5. Then check: Other specific types (code, image, video, audio, etc.)
+6. Last resort: → "other"
 
 IMPORTANT: Analyze the pricing carefully and return a JSON object with these exact fields:
 
+⚠️ CRITICAL CONSTRAINT - model_type MUST BE ONE OF THESE EXACT VALUES ONLY:
+   'text-generation', 'image-generation', 'video-generation', 'audio-generation', 'model-3d',
+   'embeddings', 'code-generation', 'reranking', 'moderation', 'search', 'training', 'detection', 'other'
+   
+   NO OTHER VALUES ARE ACCEPTABLE. If unsure, use 'other'.
+   Do NOT return: "chat", "chat-completion", "completion", "image-gen", "video-gen", "audio-gen", "tts", "embed", "code", or any variant.
+   ALWAYS return the EXACT canonical value from the list above.
+
 REQUIRED FIELDS:
-- model_type: MUST be a BROAD category. ANALYZE THE MODEL NAME FIRST!
-  * "3d-generation" - if name contains: 3D, Hyper3D, Meshy, TripoSR, Shap-E, Point-E, mesh
-  * "detection" - if name contains: SAM, YOLO, Segment, Detect, GroundingDINO, Grounding DINO
-  * "training" - if name contains: LoRA, DreamBooth, Fine-tune, Training, Adapter
-  * "code-generation" - if name contains: Code, CodeLlama, StarCoder, Codex, Replit
-  * "image-generation" - if name contains: FLUX, Stable Diffusion, DALL-E, Imagen, Image
-  * "video-generation" - if name contains: Runway, Pika, Sora, AnimateDiff, Video
-  * "audio-generation" - if name contains: Eleven, Whisper, Bark, MusicGen, Audio, Voice
-  * "text-generation" - if name contains: GPT, Claude, Llama, Mistral, Gemini, Chat, LLM
-  * "embeddings" - if name contains: embedding, CLIP, E5, BGE, vector
-  * "reranking" - if name contains: rerank, cross-encoder
-  * "moderation" - if name contains: moderation, safety, filter
-  * "search" - if name contains: search, retrieval
-  * "other" - ONLY if absolutely none of above match
+- model_type: MUST be ONE of the 13 canonical types listed above. Use PRIORITY order!
+  * Check for moderation/NSFW first → ONLY return "moderation" (not "filter", not "safety")
+  * Then check for 3D/detection/training → ONLY "model-3d", "detection", "training"
+  * Be careful not to misclassify based on partial word matches
+  * "NSFW Filter" → "moderation" (NOT "audio" or anything else)
+  * "SAM" → "detection" (NOT "training")
+  * "Hyper3D" → "model-3d" (NOT "other")
+  * "GPT-4" → "text-generation" (NOT "chat" or "completion")
 
 - category: SPECIFIC type (optional but recommended), one of:
-  * "text-to-image", "image-to-image" (for image models)
+  * "text-to-image", "image-to-image", "image-upscaling" (for image models)
   * "text-to-video", "image-to-video" (for video models)
-  * "image-to-text", "audio-to-text" (for transcription/OCR models)
-  * "fine-tuning", "lora-training", "dreambooth" (for training models)
+  * "image-to-text", "audio-to-text", "text-to-speech" (for transcription/generation)
+  * "fine-tuning", "lora-training", "dreambooth", "custom-training", "image-trainer" (for training)
   * "object-detection", "segmentation", "sam", "yolo" (for detection models)
-  * Or same as model_type if no specific variant
+  * Or leave empty/null if no specific variant applies
+  * NEVER return "none" - either return a valid category or leave empty
 - pricing_type: MUST be one of: "per_token", "per_image", "per_video", "per_minute", "per_second", "per_call", "hourly", "fixed", "tiered", "per_megapixel"
 - cost_unit: MUST match pricing_type - "token", "image", "video", "minute", "second", "call", "hour", "megapixel"
 - cost_per_call: numeric value in USD for ONE typical call (required, use 0 if unknown)

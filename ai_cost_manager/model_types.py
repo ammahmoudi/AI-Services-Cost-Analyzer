@@ -16,7 +16,7 @@ VALID_MODEL_TYPES = [
     'image-generation',     # Image creation and manipulation
     'video-generation',     # Video creation and manipulation
     'audio-generation',     # Audio/speech creation and manipulation
-    '3d-generation',       # 3D model creation and manipulation
+    'model-3d',            # 3D model creation and manipulation
     'embeddings',          # Vector embeddings models
     'code-generation',     # Code completion and generation
     'reranking',           # Search result reranking
@@ -26,6 +26,36 @@ VALID_MODEL_TYPES = [
     'detection',           # Object detection, segmentation (SAM, YOLO, etc.)
     'other',               # Fallback for unclassified models
 ]
+
+# Common synonyms / variants mapping to canonical VALID_MODEL_TYPES
+NORMALIZATION_MAP = {
+    'chat': 'text-generation',
+    'chat-completion': 'text-generation',
+    'completion': 'text-generation',
+    'image-gen': 'image-generation',
+    'image-generation': 'image-generation',
+    'video-gen': 'video-generation',
+    'audio-gen': 'audio-generation',
+    '3d': 'model-3d',
+    '3d-generation': 'model-3d',
+    '3d-gen': 'model-3d',
+    'tts': 'audio-generation',
+    'speech-to-text': 'audio-generation',
+    'transcribe': 'audio-generation',
+    'embed': 'embeddings',
+    'embedding': 'embeddings',
+    'fine-tune': 'training',
+    'fine-tuning': 'training',
+    'trainer': 'training',
+    'detection': 'detection',
+    'segmentation': 'detection',
+    'moderation': 'moderation',
+    'filter': 'moderation',
+    'code': 'code-generation',
+    'codegen': 'code-generation',
+    'rerank': 'reranking',
+    'reranking': 'reranking',
+}
 
 # Common category examples (NOT exhaustive, NOT validated)
 # These are provided as guidance for LLM extraction and human reference
@@ -109,3 +139,53 @@ def get_valid_types_string() -> str:
         Comma-separated string of valid types
     """
     return ', '.join(VALID_MODEL_TYPES)
+
+
+def normalize_model_type(model_type: str) -> str:
+    """
+    Normalize a model_type string returned by extractors/LLMs into a canonical
+    value from `VALID_MODEL_TYPES`.
+
+    - Performs case-insensitive matching against `VALID_MODEL_TYPES`.
+    - Maps common synonyms using `NORMALIZATION_MAP`.
+    - Returns 'other' when no sensible mapping exists.
+    """
+    if not model_type:
+        return 'other'
+
+    mt = str(model_type).strip().lower()
+
+    # Direct canonical match (case-insensitive)
+    for valid in VALID_MODEL_TYPES:
+        if mt == valid.lower():
+            return valid
+
+    # Map common synonyms
+    if mt in NORMALIZATION_MAP:
+        mapped = NORMALIZATION_MAP[mt]
+        if mapped in VALID_MODEL_TYPES:
+            return mapped
+
+    # Try heuristic matches (contains keywords)
+    if 'chat' in mt or 'gpt' in mt or 'llm' in mt:
+        return 'text-generation'
+    if 'image' in mt or 'diffusion' in mt or 'dalle' in mt or 'midjourney' in mt:
+        return 'image-generation'
+    if 'video' in mt or 'animate' in mt:
+        return 'video-generation'
+    if 'audio' in mt or 'speech' in mt or 'tts' in mt or 'transcribe' in mt:
+        return 'audio-generation'
+    if '3d' in mt or 'three-d' in mt or 'mesh' in mt or 'point-cloud' in mt:
+        return 'model-3d'
+    if 'embed' in mt or 'clip' in mt or 'e5' in mt:
+        return 'embeddings'
+    if 'train' in mt or 'fine' in mt or 'lora' in mt:
+        return 'training'
+    if 'detect' in mt or 'segmen' in mt or 'sam' in mt or 'yolo' in mt:
+        return 'detection'
+    if 'code' in mt or 'coder' in mt or 'codex' in mt:
+        return 'code-generation'
+    if 'rerank' in mt:
+        return 'reranking'
+
+    return 'other'

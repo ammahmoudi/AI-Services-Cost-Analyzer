@@ -1,52 +1,110 @@
-# Tests
+# Test Suite Organization
 
-Test files for the AI Cost Manager project.
+This directory contains all test and verification scripts for the AI Services Cost Analyzer project.
 
-## Test Categories
+## Directory Structure
 
-### Extraction Tests
-- `test_extraction_improved.py` - Full extraction with progress bar and timestamps
-- `test_refactored.py` - Test refactored fal.ai extractor
-- `test_quick.py` - Quick extraction test (limited models)
-- `test_together.py` - Together.ai extractor tests
+### 📁 `database/`
+Database-related tests and verification scripts:
+- `check_model_79.py` - Check specific model (ID 79) data
+- `check_cache_316.py` - Check cache entry 316
+- `check_cache_db.py` - Verify cache database entries
+- `check_db.py` - General database checks
+- `check_llm_extracted.py` - Verify LLM extraction data in database
+- `check_model_data.py` - Check model data integrity
+- `test_direct_update.py` - Test direct database updates
+- `verify_db_updates.py` - Verify database update operations
 
-### Playground & Pricing Tests
-- `test_playground.py` - Playground data extraction integration
-- `test_playground_direct.py` - Direct POST to playground endpoint
-- `test_playground_method.py` - Playground method testing
-- `test_parse_playground.py` - HTML parsing from playground
-- `test_pricing_text.py` - Pricing text extraction
-- `test_pricing_complex.py` - Complex multi-tier pricing
-- `test_extract_billing.py` - Billing data extraction
-- `test_extract_cost.py` - Cost extraction with regex
+### 📁 `models/`
+Model-related tests and inspections:
+- `check_extraction_filter.py` - Test extraction filtering logic
+- `check_types.py` - Verify model type normalization
+- `inspect_models.py` - Inspect model data
+- `inspect_models_detailed.py` - Detailed model inspection
+- `test_model_79.py` - Specific tests for model 79
 
-### Cache Tests
-- `test_cache_indicators.py` - Cache and error indicators in progress bar
-- `test_with_schemas.py` - Schema caching with fresh vs cached runs
+### 📁 `llm/`
+LLM extraction and processing tests:
+- `compare_llm_modeltype.py` - Compare LLM model type detection
+- `test_llm_extraction.py` - Test LLM extraction functionality
 
-### Database Tests
-- `test_save_db.py` - Model saving to database with timestamps
+### 📁 `extractors/`
+Third-party API extractor tests:
+- `test_avalai.py` - Avail AI extractor tests
+- `test_avalai_debug.py` - Debug version
+- `test_avalai_quick.py` - Quick test version
+- `test_metisai.py` - Metis AI extractor tests
+- `test_runware.py` - Runware extractor tests
+- `test_together.py` - Together AI extractor tests
+- `test_together_schema.py` - Together AI schema tests
 
-### Debug Tests
-- `test_debug_playground.py` - Debug playground parsing issues
-- `test_debug_pricing.py` - Debug pricing text extraction
-- `test_parse_rsc.py` - Parse React Server Components
-- `test_parse_pricing.py` - Parse pricing patterns
+### 📁 `playground/`
+Playground data extraction tests:
+- `test_debug_playground.py` - Debug playground extraction
+- `test_playground.py` - Main playground tests
+- `test_playground_direct.py` - Direct playground access tests
+- `test_playground_method.py` - Playground method tests
+- `test_parse_playground.py` - Playground parsing tests
+
+### 📁 `pricing/`
+Pricing extraction and parsing tests:
+- `test_debug_pricing.py` - Debug pricing extraction
+- `test_playwright_pricing.py` - Playwright-based pricing tests
+- `test_pricing_complex.py` - Complex pricing scenarios
+- `test_pricing_text.py` - Text-based pricing parsing
+- `test_parse_pricing.py` - Pricing parsing tests
+- `test_extract_billing.py` - Billing info extraction
+- `test_extract_cost.py` - Cost extraction tests
+
+### 📁 `extraction/`
+General extraction workflow tests:
+- `test_extraction_improved.py` - Improved extraction logic tests
+- `test_single_model_extraction.py` - Single model extraction
+- `test_with_schemas.py` - Schema extraction tests
+- `test_parse_rsc.py` - RSC parsing tests
+
+### 📁 `misc/`
+Miscellaneous tests and utilities:
+- `test_auth.py` - Authentication tests
+- `test_cache_indicators.py` - Cache indicator tests
+- `test_quick.py` - Quick smoke tests
+- `test_refactored.py` - Refactored code tests
+- `test_save_db.py` - Database save operations
 - `test_simple_parse.py` - Simple parsing tests
+- `setup_runware_auth.py` - Runware authentication setup
 
 ## Running Tests
 
-### Individual Test
+### Run specific test file:
 ```bash
-python tests/test_quick.py
+python tests/database/check_db.py
+python tests/extractors/test_avalai.py
 ```
 
-### With UTF-8 Encoding (Windows)
+### Run all tests in a category:
+```bash
+python -m pytest tests/database/
+python -m pytest tests/extractors/
+```
+
+### Run all tests:
+```bash
+python -m pytest tests/
+```
+
+### With UTF-8 Encoding (Windows):
 ```powershell
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-python tests/test_extraction_improved.py
+python tests/extraction/test_extraction_improved.py
 ```
+
+## Notes
+
+- Most test files are standalone scripts that can be run directly
+- Database tests require proper `.env` configuration with database credentials
+- Extractor tests may require API keys in environment variables
+- Some tests use Playwright for browser automation
 
 ## Test Data
 

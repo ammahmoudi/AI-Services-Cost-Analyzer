@@ -37,6 +37,84 @@ with app.app_context():
     init_db()
 
 
+def apply_llm_extraction_to_model(model, llm_result, session, source_name=None):
+    """
+    Apply LLM extraction results to a model instance.
+    This is the single source of truth for updating models from LLM extraction.
+    
+    Args:
+        model: AIModel instance
+        llm_result: Dictionary with extraction results
+        session: SQLAlchemy session
+        source_name: Optional source name for cache (if None, will try to get from model.source)
+        
+    Returns:
+        bool: True if any changes were made
+    """
+    from ai_cost_manager.model_types import normalize_model_type
+    from sqlalchemy.orm import attributes as sa_attributes
+    from ai_cost_manager.cache import cache_manager
+    
+    changes_made = False
+    original_type = model.model_type
+    
+    # Update model_type
+    extracted_type = llm_result.get('model_type')
+    if extracted_type:
+        normalized_type = normalize_model_type(extracted_type)
+        
+        if normalized_type != original_type:
+            model.model_type = normalized_type
+            sa_attributes.flag_modified(model, 'model_type')
+            print(f"  Type: {original_type} → {normalized_type}")
+            changes_made = True
+    
+    # Update category
+    extracted_category = llm_result.get('category')
+    if extracted_category and str(extracted_category).lower() != 'none':
+        if extracted_category != model.category:
+            model.category = extracted_category
+            print(f"  Category: {model.category} → {extracted_category}")
+            changes_made = True
+    
+    # Update tags
+    extracted_tags = llm_result.get('tags')
+    if extracted_tags and extracted_tags != model.tags:
+        model.tags = extracted_tags
+        print(f"  Tags: {model.tags} → {extracted_tags}")
+        changes_made = True
+    
+    # Update description
+    extracted_description = llm_result.get('description')
+    if extracted_description and extracted_description != model.description:
+        model.description = extracted_description
+        changes_made = True
+    
+    # Update pricing fields
+    extracted_cost = llm_result.get('cost_per_call')
+    if extracted_cost is not None and extracted_cost != 0:
+        model.cost_per_call = extracted_cost
+        changes_made = True
+    
+    model.pricing_type = llm_result.get('pricing_type')
+    model.pricing_formula = llm_result.get('pricing_formula')
+    model.pricing_variables = llm_result.get('pricing_variables')
+    model.input_cost_per_unit = llm_result.get('input_cost_per_unit')
+    model.output_cost_per_unit = llm_result.get('output_cost_per_unit')
+    model.cost_unit = llm_result.get('cost_unit')
+    
+    # Store full LLM extraction result
+    model.llm_extracted = llm_result
+    model.last_llm_fetched = datetime.utcnow()
+    
+    # Save to cache if source_name provided
+    if source_name:
+        cache_manager.save_llm_extraction(source_name, model.model_id, llm_result)
+        print(f"  💾 Saved LLM extraction to cache ({source_name})")
+    
+    return changes_made
+
+
 @app.route('/')
 def index():
     """Home page - show dashboard"""
@@ -1013,6 +1091,9 @@ def extract_model_pricing(model_id):
         if not model:
             return jsonify({'error': 'Model not found'}), 404
         
+        # Get source name while model is still bound to session
+        source_name = model.source.name if model.source else 'unknown'
+        
         # Check if LLM config exists
         llm_config = session.query(LLMConfiguration).filter_by(is_active=True).first()
         if not llm_config:
@@ -1031,16 +1112,16 @@ def extract_model_pricing(model_id):
         })
         
         if pricing_details:
-            # Update model with extracted pricing
-            model.pricing_type = pricing_details.get('pricing_type')
-            model.pricing_formula = pricing_details.get('pricing_formula')
-            model.pricing_variables = pricing_details.get('pricing_variables')
-            model.input_cost_per_unit = pricing_details.get('input_cost_per_unit')
-            model.output_cost_per_unit = pricing_details.get('output_cost_per_unit')
-            model.cost_unit = pricing_details.get('cost_unit')
-            model.llm_extracted = True
+            # Use shared function to apply LLM extraction
+            print(f"Applying LLM extraction to {model.name}...")
+            changes_made = apply_llm_extraction_to_model(model, pricing_details, session, source_name)
             
+            if changes_made:
+                print(f"  ✅ Updated {model.name}")
+            
+            session.flush()
             session.commit()
+            print(f"💾 Committed changes for model ID {model.id}")
             
             return jsonify({
                 'success': True,
@@ -1457,24 +1538,27 @@ def run_llm_extraction():
                     thread_query = thread_query.filter(AIModel.llm_extracted.is_(None))
                 
                 models = thread_query.all()
+                model_ids = [m.id for m in models]  # Store only IDs
                 
                 llm_extractor = LLMPricingExtractor()
                 
                 updated_count = 0
-                batch_size = 10
-                batch_count = 0
                 
-                for i, model in enumerate(models, 1):
+                for i, model_id in enumerate(model_ids, 1):
                     try:
-                        # Store original values
-                        original_type = model.model_type
-                        original_category = model.category
-                        original_tags = model.tags or []
+                        # Re-query model fresh in this thread's session EVERY iteration
+                        # This ensures SQLAlchemy properly tracks changes
+                        model = thread_session.query(AIModel).filter_by(id=model_id).first()
+                        if not model:
+                            continue
+                        
+                        # Get source name while model is bound to session
+                        source_name = model.source.name if model.source else 'unknown'
                         
                         # Update progress
                         progress_tracker.update(
                             processed=i,
-                            current_model_id=model.model_id,
+                            current_model_id=str(model.model_id),
                             current_model_name=model.name
                         )
                         
@@ -1503,71 +1587,44 @@ def run_llm_extraction():
                         # Brief delay to avoid rate limiting
                         time.sleep(0.5)
                         
+                        # Store name before session operations that might detach the model
+                        model_name = model.name
+                        model_db_id = model.id
+                        
                         if llm_result:
-                            # Update model with LLM-extracted data
-                            if llm_result.get('model_type'):
-                                model.model_type = llm_result['model_type']
+                            # Use shared function to apply LLM extraction
+                            print(f"Processing {model_name}...")
+                            changes_made = apply_llm_extraction_to_model(model, llm_result, thread_session, source_name)
                             
-                            if llm_result.get('category'):
-                                model.category = llm_result['category']
-                            
-                            if llm_result.get('tags'):
-                                model.tags = llm_result['tags']
-                            
-                            if llm_result.get('description'):
-                                model.description = llm_result['description']
-                            
-                            if llm_result.get('cost_per_call') is not None:
-                                model.cost_per_call = llm_result['cost_per_call']
-                            
-                            if llm_result.get('pricing_formula'):
-                                model.pricing_formula = llm_result['pricing_formula']
-                            
-                            # Mark as LLM extracted (store as JSON)
-                            model.llm_extracted = llm_result
-                            
-                            updated_count += 1
-                            progress_tracker.increment_updated()
-                            
-                            # Store comparison data in progress tracker for UI display
-                            progress_tracker.state['current_extraction'] = {
-                                'original_type': original_type,
-                                'extracted_type': llm_result.get('model_type'),
-                                'original_category': original_category,
-                                'extracted_category': llm_result.get('category'),
-                                'original_tags': original_tags,
-                                'extracted_tags': llm_result.get('tags', []),
-                            }
-                            progress_tracker._save()
+                            if changes_made:
+                                updated_count += 1
+                                progress_tracker.increment_updated()
+                                print(f"  ✅ Updated {model_name}")
                         
-                        batch_count += 1
-                        
-                        if batch_count >= batch_size:
-                            thread_session.commit()
-                            batch_count = 0
+                        # Commit IMMEDIATELY after each model to ensure persistence
+                        thread_session.flush()
+                        thread_session.commit()
+                        print(f"    💾 Committed model ID {model_db_id}")
                         
                     except Exception as e:
-                        print(f"Error processing {model.name}: {e}")
+                        print(f"Error processing model ID {model_id}: {e}")
                         import traceback
                         traceback.print_exc()
                         progress_tracker.update(
                             processed=i,
-                            current_model_id=model.model_id,
-                            current_model_name=model.name,
+                            current_model_id=str(model_id),
+                            current_model_name="unknown",
                             has_error=True,
                             error_message=str(e)
                         )
                         thread_session.rollback()
-                        batch_count = 0
                         # Continue with next model instead of stopping
                 
-                # Final commit
-                if batch_count > 0:
-                    thread_session.commit()
-                
+                # Final summary
+                print("\n" + "="*60)
                 progress_tracker.complete()
                 
-                print(f"✅ LLM extraction completed: {updated_count}/{len(models)} models updated")
+                print(f"✅ LLM extraction completed: {updated_count}/{len(model_ids)} models updated")
                 
             except Exception as e:
                 print(f"❌ LLM extraction failed: {e}")

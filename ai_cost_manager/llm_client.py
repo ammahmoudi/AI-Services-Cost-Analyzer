@@ -95,8 +95,10 @@ class LLMClient:
 
     @staticmethod
     def parse_response(response: str) -> Dict[str, Any]:
-        """Parse LLM response into structured data (JSON)."""
+        """Parse LLM response into structured data (JSON) with normalization."""
         import json
+        from ai_cost_manager.model_types import normalize_model_type
+        
         response = response.strip()
         if response.startswith('```'):
             lines = response.split('\n')
@@ -105,10 +107,20 @@ class LLMClient:
             response = response[7:]
         try:
             data = json.loads(response)
-            return data
         except json.JSONDecodeError:
             import re
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if json_match:
-                return json.loads(json_match.group())
-            raise
+                data = json.loads(json_match.group())
+            else:
+                raise
+        
+        # Normalize model_type if present to canonical value
+        if 'model_type' in data and data['model_type']:
+            original_type = data['model_type']
+            normalized = normalize_model_type(original_type)
+            if normalized != original_type:
+                print(f"      [parse_response] Normalized model_type: '{original_type}' → '{normalized}'")
+            data['model_type'] = normalized
+        
+        return data
