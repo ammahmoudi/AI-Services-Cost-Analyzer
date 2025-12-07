@@ -144,8 +144,47 @@ class ModelMatcher:
                 else:
                     print(f"  Sample: {model_summaries[0]['name']}, {model_summaries[1]['name']}, ...")
 
-            # Call LLM to identify matches using the unified LLM client
-            try:
+            # Process in batches if too many models (max 50 per batch to avoid context overflow)
+            BATCH_SIZE = 50
+            all_batch_matches = []
+            
+            if len(model_summaries) > BATCH_SIZE:
+                num_batches = (len(model_summaries) + BATCH_SIZE - 1) // BATCH_SIZE
+                print(f"  ⚡ Processing in {num_batches} batches...")
+                
+                for batch_idx in range(num_batches):
+                    start_idx = batch_idx * BATCH_SIZE
+                    end_idx = min((batch_idx + 1) * BATCH_SIZE, len(model_summaries))
+                    batch = model_summaries[start_idx:end_idx]
+                    
+                    print(f"  📦 Batch {batch_idx + 1}/{num_batches}: models {start_idx}-{end_idx-1}")
+                    
+                    try:
+                        batch_matches = self._llm_match_request_unified(model_type, batch)
+                        
+                        # Adjust indices to account for batch offset
+                        for match_group in batch_matches:
+                            if isinstance(match_group, dict) and 'indices' in match_group:
+                                original_indices = match_group['indices']
+                                if isinstance(original_indices, list):
+                                    match_group['indices'] = [idx + start_idx for idx in original_indices]
+                        
+                        if batch_matches:
+                            print(f"    ✅ Found {len(batch_matches)} groups in this batch")
+                        all_batch_matches.extend(batch_matches)
+                    except Exception as e:
+                        print(f"    ⚠️  Batch failed: {e}")
+                        continue
+                
+                matches = all_batch_matches
+                
+                # Summary
+                if matches:
+                    print(f"✅ Total: Found {len(matches)} match groups across all batches")
+                else:
+                    print(f"ℹ️  No matches found (all models will be individual)")
+            else:
+                # Small enough to process in one go
                 matches = self._llm_match_request_unified(model_type, model_summaries)
                 
                 # Debug: Print matches found
@@ -157,7 +196,8 @@ class ModelMatcher:
                 else:
                     print(f"ℹ️  No matches found for {model_type} (all models will be individual)")
 
-
+            # Process matches and build ModelMatch objects
+            try:
                 # Track which models have been matched
                 matched_indices = set()
                 
