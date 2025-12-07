@@ -202,54 +202,70 @@ class ModelMatcher:
         """Make LLM request to match models using the shared LLMClient utility"""
         prompt = f"""You are an AI model expert tasked with identifying IDENTICAL models from different providers.
 
-⚠️ CRITICAL: Only match models if they are the EXACT SAME model, just hosted by different providers.
+⚠️ TASK: Match models that are the EXACT SAME model, accounting for formatting differences.
 
 Models to analyze:
 {json.dumps(model_summaries, indent=2)}
 
-🔴 STRICT MATCHING RULES:
+🔴 MATCHING RULES:
 
-1. **Version Numbers Matter**:
-   - "FLUX.1" ≠ "FLUX.1.1" (different versions)
-   - "FLUX 1" ≠ "FLUX 2" (different versions)
-   - "GPT-4" ≠ "GPT-4.5" (different versions)
+1. **Ignore Formatting Differences** (these are the SAME model):
+   ✅ "flux-1.1-pro" = "FLUX1.1 [pro]" = "Flux 1.1 Pro" = "FLUX 1.1 (Pro)" (same model, different formatting)
+   ✅ "sdxl-1.0" = "SDXL 1.0" = "Stable Diffusion XL 1.0" (abbreviation vs full name)
+   ✅ "gpt-4-turbo" = "GPT-4 Turbo" = "GPT 4 (Turbo)" (same model)
    
-2. **Edition/Variant Keywords Matter**:
-   - "FLUX.1 Pro" ≠ "FLUX.1 Dev" (Pro ≠ Dev)
-   - "FLUX.1.1 Pro" ≠ "FLUX.1.1" (one has Pro, one doesn't)
-   - "Schnell" ≠ "Dev" ≠ "Pro" (different editions)
-   - "Turbo" ≠ "Standard" (different variants)
-   - "Ultra" ≠ "Pro" ≠ "Kontex" (different tiers)
+   Formatting to ignore:
+   - Hyphens vs spaces vs underscores: "flux-1.1" = "flux 1.1" = "flux_1_1"
+   - Brackets/parentheses: "[pro]" = "(pro)" = "pro"
+   - Capitalization: "FLUX" = "flux" = "Flux"
+   - Extra version labels: "V1.1" = "1.1" = "version 1.1"
 
-3. **Only Match Exact Same Model**:
-   ✅ MATCH: "FLUX.1.1 [pro]" + "Flux 1.1 Pro" + "flux-1-1-pro" (same model, formatting differences)
-   ✅ MATCH: "SDXL 1.0" + "Stable Diffusion XL 1.0" (same model, full vs abbreviation)
-   ❌ DON'T MATCH: "FLUX.1 Pro" + "FLUX.1 Dev" (different editions)
-   ❌ DON'T MATCH: "FLUX.1.1 Pro" + "FLUX.1 Pro" (different versions)
-   ❌ DON'T MATCH: "GPT-4" + "GPT-4-turbo" (different variants)
+2. **Version Numbers MUST Match Exactly**:
+   ❌ "FLUX 1.1" ≠ "FLUX 1.0" (different versions)
+   ❌ "FLUX 1" ≠ "FLUX 2" (different major versions)
+   ❌ "GPT-4" ≠ "GPT-4.5" (different versions)
+   ❌ "SDXL 1.0" ≠ "SDXL 2.1" (different versions)
 
-4. **Check ALL Parts of the Name**:
-   - Base name must match (FLUX = FLUX, GPT-4 = GPT-4)
-   - Version must match exactly (1.1 = 1.1, but 1.1 ≠ 1.0)
-   - Edition/variant must match (Pro = Pro, Dev = Dev, Schnell = Schnell)
-   - If one has edition keyword and other doesn't → DON'T MATCH
+3. **Edition/Variant Keywords MUST Match**:
+   ❌ "FLUX 1.1 Pro" ≠ "FLUX 1.1 Dev" (Pro ≠ Dev)
+   ❌ "FLUX 1.1 Pro" ≠ "FLUX 1.1" (one has Pro, one doesn't)
+   ❌ "Schnell" ≠ "Dev" ≠ "Pro" (different editions)
+   ❌ "Turbo" ≠ "Standard" (different variants)
+   ❌ "Ultra" ≠ "Pro" (different tiers)
 
-5. **When in Doubt → DON'T MATCH**:
-   - If you're not 95%+ confident they're identical → treat as different
-   - Missing information → treat as different
-   - Ambiguous naming → treat as different
+4. **Matching Algorithm**:
+   a) Extract base name (e.g., "FLUX", "GPT-4", "SDXL")
+   b) Extract version (e.g., "1.1", "2.0", "4.5")
+   c) Extract edition/variant (e.g., "Pro", "Dev", "Turbo", "Schnell")
+   d) MATCH if: base name matches AND version matches AND edition matches
+   e) Ignore all formatting (spaces, hyphens, brackets, case)
 
-✅ Return ONLY a JSON array of match groups (or empty array [] if no matches):
+5. **Examples**:
+   ✅ MATCH: "BFL flux-1.1-pro" + "FLUX1.1 [pro]" + "Flux 1.1 Pro"
+      → Same: base="FLUX", version="1.1", edition="pro"
+   
+   ✅ MATCH: "SDXL-1.0" + "Stable Diffusion XL 1.0" + "sdxl_1_0"
+      → Same: base="SDXL", version="1.0", edition=none
+   
+   ❌ DON'T MATCH: "FLUX 1.1 Pro" + "FLUX 1.1 Dev"
+      → Different editions: "Pro" ≠ "Dev"
+   
+   ❌ DON'T MATCH: "FLUX 1.1 Pro" + "FLUX 1.0 Pro"
+      → Different versions: "1.1" ≠ "1.0"
+
+6. **When Uncertain**: If confidence < 90% → DON'T MATCH
+
+✅ Return ONLY a JSON array of match groups:
 [
     {{
         "canonical_name": "flux-1-1-pro",
         "indices": [2, 5, 9],
-        "confidence": 0.98,
-        "reasoning": "All three are FLUX.1.1 Pro - same base, version, and edition"
+        "confidence": 0.95,
+        "reasoning": "All are FLUX version 1.1 Pro edition - same base, version, and edition despite formatting"
     }}
 ]
 
-⚠️ Only include groups with confidence > 0.9. Models not grouped will remain separate.
+⚠️ Only include groups with confidence > 0.9. Empty array [] if no confident matches.
 """
         try:
             llm_client = LLMClient(self.config)
