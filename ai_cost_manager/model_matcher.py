@@ -135,9 +135,28 @@ class ModelMatcher:
                 }
                 model_summaries.append(summary)
 
+            # Debug: Print sample of models being matched
+            if len(model_summaries) > 0:
+                print(f"\n🔍 Matching {len(model_summaries)} {model_type} models...")
+                if len(model_summaries) <= 5:
+                    for summary in model_summaries:
+                        print(f"  [{summary['index']}] {summary['name']} ({summary['provider']})")
+                else:
+                    print(f"  Sample: {model_summaries[0]['name']}, {model_summaries[1]['name']}, ...")
+
             # Call LLM to identify matches using the unified LLM client
             try:
                 matches = self._llm_match_request_unified(model_type, model_summaries)
+                
+                # Debug: Print matches found
+                if matches:
+                    print(f"✅ Found {len(matches)} match groups for {model_type}")
+                    for match in matches:
+                        if isinstance(match, dict):
+                            print(f"  → {match.get('canonical_name', '?')}: indices {match.get('indices', [])} (confidence: {match.get('confidence', 0)})")
+                else:
+                    print(f"ℹ️  No matches found for {model_type} (all models will be individual)")
+
 
                 # Track which models have been matched
                 matched_indices = set()
@@ -269,7 +288,11 @@ Models to analyze:
 """
         try:
             llm_client = LLMClient(self.config)
-            response = llm_client.chat(prompt, temperature=0.3, max_tokens=800)
+            response = llm_client.chat(prompt, temperature=0.2, max_tokens=2000)
+            
+            # Debug: Log raw LLM response for troubleshooting
+            print(f"\n📝 LLM Response preview: {response[:500]}...")
+            
             parsed = llm_client.parse_response(response)
             
             # Handle different response formats
