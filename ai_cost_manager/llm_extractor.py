@@ -129,7 +129,7 @@ ADDITIONAL CONTEXT:
 
 CRITICAL TYPE DETECTION RULES (check ALL signals, not just name):
 
-IMPORTANT: Check the ADDITIONAL CONTEXT section above for Categories/Tags! If you see "3D" anywhere in the categories or tags, it's a 3D model!
+IMPORTANT: Check the ADDITIONAL CONTEXT section above for Categories/Tags! Use them as PRIMARY indicators!
 
 1. **3D MODELS** → "model-3d"
    ✓ Name contains: 3D, Hyper3D, Meshy, TripoSR, Shap-E, Point-E, InstantMesh, Part, Hunyuan
@@ -137,28 +137,41 @@ IMPORTANT: Check the ADDITIONAL CONTEXT section above for Categories/Tags! If yo
    ✓ Categories/Tags contain: 3D, 3D-to-3D, text-to-3d, image-to-3d, mesh-generation, point-cloud, point cloud
    ⚠️ PRIORITY: If Categories/Tags mention "3D" anywhere, return "model-3d" (NOT "other")!
 
-2. **TRAINING MODELS** → model_type: "training"
+2. **TRAINING MODELS** → "training"
    ✓ Name contains: LoRA, DreamBooth, Fine-tune, Training, Trainer, Adapter, Qwen, Custom
    ✓ Description mentions: train, fine-tuning, custom model, adapter, lora
    ✓ Category: fine-tuning, lora-training, dreambooth, custom-training, image-trainer
    ✗ NOT if name contains: generate, generation (those are for image/video generation)
 
-4. **MODERATION** → "moderation"
+3. **TEXT-TO-VIDEO & VIDEO CAPTIONING** - Be careful with distinction!
+   
+   a) **VIDEO GENERATION** → "video-generation"
+      ✓ Name contains: Runway, Pika, Sora, AnimateDiff, SVD, Video Generation, GenVideo
+      ✓ Description mentions: "generate video", "create video", "text-to-video", "video synthesis"
+      ✓ Category: text-to-video, image-to-video, video-generation
+   
+   b) **VIDEO CAPTIONING/DESCRIPTION** → "text-generation" (it's an LLM analyzing video!)
+      ✓ Name contains: Video Captioner, Video Caption, Video Description, Video-LLM, VideoLLaMA
+      ✓ Description mentions: "caption video", "describe video", "video understanding", "video Q&A", "analyze video"
+      ✓ Category: video-captioning, video-to-text, video-description, video-qa
+      ⚠️ CRITICAL: If model takes VIDEO as INPUT and generates TEXT, it's "text-generation" NOT "video-generation"!
+
+4. **VISION/MULTIMODAL MODELS** → "text-generation"
+   ✓ Name contains: Florence, CLIP, BLIP, LLaVA, GPT-4V, Gemini Vision, Qwen-VL, InternVL
+   ✓ Description mentions: vision-language, multimodal, image understanding, visual question answering, OCR
+   ✓ Category: vision-language, vqa, multimodal, image-to-text, ocr
+   ⚠️ These are LLMs with vision capabilities, return "text-generation"!
+
+5. **MODERATION** → "moderation"
    ✓ Name contains: NSFW, Moderation, Safety, Filter, Content Filter
    ✓ Description mentions: moderation, safety, inappropriate, filter content
    ✓ Category: content-moderation, nsfw-detection, safety-filter
-   ⚠️  PRIORITY: Check this BEFORE audio/video types
+   ⚠️ PRIORITY: Check this BEFORE audio/video types
 
-5. **IMAGE GENERATION** → "image-generation"
+6. **IMAGE GENERATION** → "image-generation"
    ✓ Name contains: FLUX, Stable Diffusion, DALL-E, Midjourney, Imagen, Kandinsky
    ✓ Description mentions: image generation, create images, photo, art
    ✓ Category: text-to-image, image-to-image, inpainting, upscaling
-   ✗ NOT if name is about detection/moderation
-
-6. **VIDEO GENERATION** → "video-generation"
-   ✓ Name contains: Runway, Pika, Sora, AnimateDiff, SVD, Video
-   ✓ Description mentions: video generation, animation, motion
-   ✓ Category: text-to-video, image-to-video, video-editing
    ✗ NOT if name is about detection/moderation
 
 7. **AUDIO GENERATION** → "audio-generation"
@@ -176,6 +189,7 @@ IMPORTANT: Check the ADDITIONAL CONTEXT section above for Categories/Tags! If yo
    ✓ Name contains: GPT, Claude, Llama, Mistral, Gemini, Chat, LLM
    ✓ Description mentions: language model, chat, text generation
    ✓ Category: chat, completion, vision (if accepts images)
+   ⚠️ INCLUDES vision-language models (Florence, BLIP, etc.) and video captioning models!
 
 10. **EMBEDDINGS** → "embeddings"
     ✓ Name contains: embedding, CLIP, E5, BGE, embed
@@ -189,13 +203,20 @@ IMPORTANT: Check the ADDITIONAL CONTEXT section above for Categories/Tags! If yo
     ✓ Name contains: search, retrieval
     ✓ Description mentions: search engine, information retrieval
 
+13. **DETECTION** → "detection"
+    ✓ Name contains: SAM, YOLO, Detect, Segment, Mask
+    ✓ Description mentions: object detection, segmentation, instance segmentation
+    ✓ Category: object-detection, segmentation, instance-segmentation
+
 DETECTION PRIORITY (check in this order):
 1. First: Is it MODERATION/NSFW filter? → "moderation"
 2. Second: Is it TRAINING model? → "training" (includes fine-tuning, LoRA, custom trainers)
 3. Third: Is it 3D model? → "model-3d"
 4. Fourth: Is it DETECTION/SEGMENTATION? → "detection"
-5. Then check: Other specific types (code, image, video, audio, etc.)
-6. Last resort: → "other"
+5. Fifth: Is it VIDEO CAPTIONING (video→text)? → "text-generation" (NOT video-generation!)
+6. Sixth: Is it VISION/MULTIMODAL (image→text)? → "text-generation" (Florence, BLIP, etc.)
+7. Then check: Other specific types (code, image generation, video generation, audio, etc.)
+8. Last resort: → "other"
 
 IMPORTANT: Analyze the pricing carefully and return a JSON object with these exact fields:
 
@@ -211,6 +232,8 @@ REQUIRED FIELDS:
 - model_type: MUST be ONE of the 13 canonical types listed above. Use PRIORITY order!
   * Check for moderation/NSFW first → ONLY return "moderation" (not "filter", not "safety")
   * Then check for 3D/detection/training → ONLY "model-3d", "detection", "training"
+  * VIDEO CAPTIONING (video→text) → "text-generation" (NOT "video-generation")
+  * VISION MODELS (Florence, BLIP) → "text-generation" (NOT "other")
   * Be careful not to misclassify based on partial word matches
   * "NSFW Filter" → "moderation" (NOT "audio" or anything else)
   * "SAM" → "detection" (NOT "training")

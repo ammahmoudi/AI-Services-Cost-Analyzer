@@ -37,6 +37,7 @@ class ProgressTracker:
             'processed_models': 0,
             'current_model': None,
             'current_model_name': None,
+            'current_extraction': None,  # LLM extraction details for current model
             'new_models': 0,
             'updated_models': 0,
             'cached_count': 0,
@@ -79,7 +80,8 @@ class ProgressTracker:
     
     def update(self, processed: int, current_model_id: str = None, 
                current_model_name: str = None, cache_used: list = None,
-               has_error: bool = False, error_message: str = None):
+               has_error: bool = False, error_message: str = None,
+               current_extraction: dict = None):
         """
         Update progress.
         
@@ -90,10 +92,12 @@ class ProgressTracker:
             cache_used: List of cache types used ['raw', 'schema', 'llm']
             has_error: Whether current model had an error
             error_message: Error message if has_error is True
+            current_extraction: LLM extraction details (original_type, extracted_type, etc.)
         """
         self.state['processed_models'] = processed
         self.state['current_model'] = current_model_id
         self.state['current_model_name'] = current_model_name
+        self.state['current_extraction'] = current_extraction
         
         # Update cache counts
         if cache_used:

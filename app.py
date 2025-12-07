@@ -1555,6 +1555,9 @@ def run_llm_extraction():
                         # Get source name while model is bound to session
                         source_name = model.source.name if model.source else 'unknown'
                         
+                        # Store original values before extraction
+                        original_type = model.model_type
+                        
                         # Update progress
                         progress_tracker.update(
                             processed=i,
@@ -1592,6 +1595,24 @@ def run_llm_extraction():
                         model_db_id = model.id
                         
                         if llm_result:
+                            # Prepare extraction info for UI
+                            from ai_cost_manager.model_types import normalize_model_type
+                            extracted_type = llm_result.get('model_type')
+                            normalized_type = normalize_model_type(extracted_type) if extracted_type else 'other'
+                            
+                            # Update progress with extraction details
+                            progress_tracker.update(
+                                processed=i,
+                                current_model_id=str(model.model_id),
+                                current_model_name=model_name,
+                                current_extraction={
+                                    'original_type': original_type,
+                                    'extracted_type': normalized_type,
+                                    'extracted_category': llm_result.get('category'),
+                                    'extracted_tags': llm_result.get('tags', [])
+                                }
+                            )
+                            
                             # Use shared function to apply LLM extraction
                             print(f"Processing {model_name}...")
                             changes_made = apply_llm_extraction_to_model(model, llm_result, thread_session, source_name)
