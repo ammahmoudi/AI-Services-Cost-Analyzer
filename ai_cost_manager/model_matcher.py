@@ -125,13 +125,15 @@ class ModelMatcher:
             model_summaries = []
             for i, model in enumerate(type_models):
                 features = self.extract_model_features(model)
+                # Include model_name and more description for better matching
                 summary = {
                     'index': i,
                     'name': features['name'],
+                    'model_name': features['model_name'] if features['model_name'] else features['name'],
                     'provider': features['provider'],
                     'model_id': features['model_id'],
-                    'description': features['description'][:200] if features['description'] else '',
-                    'tags': features['tags'][:5] if features['tags'] else [],
+                    'description': features['description'][:300] if features['description'] else '',
+                    'tags': features['tags'][:8] if features['tags'] else [],
                 }
                 model_summaries.append(summary)
 
@@ -207,10 +209,10 @@ class ModelMatcher:
                     if not isinstance(match_group, dict):
                         continue
                     
-                    # Check confidence threshold - only accept high-confidence matches
+                    # Check confidence threshold - accept reasonably confident matches
                     confidence = match_group.get('confidence', 0.0)
-                    if confidence < 0.9:
-                        print(f"⚠️  Skipping low-confidence match ({confidence}): {match_group.get('canonical_name', 'unknown')}")
+                    if confidence < 0.85:
+                        print(f"⚠️  Skipping low-confidence match ({confidence:.2f}): {match_group.get('canonical_name', 'unknown')}")
                         continue
                     
                     # Ensure indices is a list
@@ -259,35 +261,61 @@ class ModelMatcher:
 
     def _llm_match_request_unified(self, model_type: str, model_summaries: List[Dict]) -> List[Dict]:
         """Make LLM request to match models using the shared LLMClient utility"""
-        prompt = f"""Find models that are IDENTICAL (same model from different providers).
+        prompt = f"""You are a model matching expert. Your task is to identify models that are the SAME underlying AI model offered by different providers.
 
-Models:
+Model Type: {model_type}
+
+Models to analyze:
 {json.dumps(model_summaries, indent=2)}
 
-RULES:
-1. Ignore formatting: "flux-1.1-pro" = "FLUX1.1 [pro]" = "Flux 1.1 Pro"
-2. Version must match: "FLUX 1.1" ≠ "FLUX 1.0" 
-3. Edition must match: "Pro" ≠ "Dev" ≠ "Schnell"
+MATCHING RULES:
+1. **Ignore formatting variations**: "flux-1.1-pro", "FLUX1.1 [pro]", "Flux 1.1 Pro", "flux_1_1_pro" are ALL the same
+2. **Version MUST match exactly**: "FLUX 1.1" ≠ "FLUX 1.0", "GPT-4o" ≠ "GPT-4"
+3. **Edition/variant MUST match**: "Pro" ≠ "Dev" ≠ "Schnell", "Turbo" ≠ "Standard"
+4. **Base model name must be the same**: "FLUX" = "Flux", "Claude" = "claude"
+5. **Provider names don't matter**: Same model from Replicate, FAL, Runware, etc. should be matched
 
-Examples:
-✅ MATCH: "BFL flux-1.1-pro" + "FLUX1.1 [pro]" (same: base=FLUX, v=1.1, edition=pro)
-✅ MATCH: "Kling 1.6 Standard" + "kling-1-6-standard" (same model, different format)
-❌ NO MATCH: "FLUX 1.1 Pro" + "FLUX 1.1 Dev" (different editions)
-❌ NO MATCH: "FLUX 1.1" + "FLUX 1.0" (different versions)
+Positive Examples:
+✅ "BFL flux-1.1-pro" + "FLUX1.1 [pro]" + "Flux 1.1 Pro (Replicate)" → MATCH (all are Flux 1.1 Pro)
+✅ "Kling 1.6 Standard" + "kling-1-6-standard" + "Kling 1.6 Standard (Runware)" → MATCH
+✅ "Claude 3.5 Sonnet" + "anthropic/claude-3.5-sonnet" + "claude-3-5-sonnet-20241022" → MATCH
+✅ "Stable Diffusion XL" + "SDXL" + "stable-diffusion-xl-1024-v1-0" → MATCH
 
-Return JSON array (empty if no matches):
-[{{"canonical_name": "flux-1-1-pro", "indices": [2, 5], "confidence": 0.95, "reasoning": "Both FLUX 1.1 Pro"}}]
+Negative Examples:
+❌ "FLUX 1.1 Pro" + "FLUX 1.1 Dev" → NO MATCH (different editions)
+❌ "FLUX 1.1" + "FLUX 1.0" → NO MATCH (different versions)
+❌ "GPT-4o" + "GPT-4o-mini" → NO MATCH (mini is a different model)
+❌ "Claude 3.5 Sonnet" + "Claude 3 Opus" → NO MATCH (different models)
 
-IMPORTANT: Only group if confidence > 0.9 and at least 2 models match.
+OUTPUT FORMAT:
+Return a JSON array of match groups. Each group represents models that are identical.
+If NO matches found, return empty array: []
+
+[{{"canonical_name": "flux-1-1-pro", "indices": [0, 3, 7], "confidence": 0.95, "reasoning": "All three are Flux 1.1 Pro with formatting variations"}}]
+
+REQUIREMENTS:
+- Only group if at least 2 models match
+- Use confidence 0.95 for exact matches, 0.90-0.94 for likely matches
+- canonical_name should be a clean, standardized version of the model name
+- Include clear reasoning for each match
+
+Analyze the models above and identify ALL matching groups:
 """
         try:
             llm_client = LLMClient(self.config)
-            response = llm_client.chat(prompt, temperature=0.1, max_tokens=2000)
+            response = llm_client.chat(prompt, temperature=0.1, max_tokens=4000)
             
             # Debug: Log raw LLM response for troubleshooting
-            print(f"\n📝 LLM Response preview: {response[:500]}...")
+            response_preview = response[:500] if len(response) > 500 else response
+            print(f"\n📝 LLM Response preview: {response_preview}...")
             
             parsed = llm_client.parse_response(response)
+            
+            # Additional debug info
+            if isinstance(parsed, list):
+                print(f"   Parsed {len(parsed)} potential match groups")
+            elif isinstance(parsed, dict):
+                print(f"   Parsed dict with keys: {list(parsed.keys())}")
             
             # Handle different response formats
             if isinstance(parsed, dict) and 'matches' in parsed:
