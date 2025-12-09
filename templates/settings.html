@@ -122,72 +122,149 @@
     <div class="tab-content active" id="llm-tab">
         <h3 class="section-title">LLM API Configuration</h3>
         
-        <form method="POST" action="/settings/llm">
-            {% if llm_config %}
-                <input type="hidden" name="config_id" value="{{ llm_config.id }}">
-            {% endif %}
+        <div style="background: #f0f9ff; padding: 1rem; border-radius: 8px; margin-bottom: 2rem; border: 1px solid #bfdbfe;">
+            <p style="color: #1e40af; font-size: 0.9rem; margin: 0;">
+                Configure separate LLMs for different purposes:<br>
+                <strong>🔍 Extraction:</strong> Parses pricing & model names during extraction<br>
+                <strong>🔎 Search:</strong> Powers semantic AI search with natural language
+            </p>
+        </div>
+        
+        <!-- Extraction LLM Configuration -->
+        <div class="card" style="background: #f0fdf4; border: 2px solid #10b981; margin-bottom: 2rem;">
+            <h4 style="margin-top: 0; color: #065f46;">🔍 Extraction LLM</h4>
+            <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">
+                Used for extracting pricing details and parsing model name components (company, version, size, etc.)
+            </p>
             
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="provider">Provider</label>
-                    <input type="text" id="provider" name="provider" 
-                           value="{{ llm_config.provider if llm_config else 'openrouter' }}" readonly>
-                    <div class="help-text">Currently only OpenRouter is supported</div>
+            <form method="POST" action="/settings/llm">
+                <input type="hidden" name="purpose" value="extraction">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="extraction_model">Model</label>
+                        <select id="extraction_model" name="model_name" required>
+                            {% if available_models %}
+                                <optgroup label="🆓 FREE MODELS">
+                                    {% for model in available_models if model.is_free %}
+                                        <option value="{{ model.id }}"
+                                                {% if llm_extraction and llm_extraction.model_name == model.id %}selected{% endif %}>
+                                            {{ model.name }} - FREE
+                                        </option>
+                                    {% endfor %}
+                                </optgroup>
+                                <optgroup label="⭐ RECOMMENDED">
+                                    {% for model in available_models if model.id in recommended_models and not model.is_free %}
+                                        <option value="{{ model.id }}"
+                                                {% if llm_extraction and llm_extraction.model_name == model.id %}selected{% endif %}
+                                                {% if not llm_extraction and model.id == 'openai/gpt-4o-mini' %}selected{% endif %}>
+                                            {{ model.name }} - ${{ "%.2f"|format(model.prompt_price|float * 1000000) }}/1M
+                                        </option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% else %}
+                                <option value="openai/gpt-4o-mini" selected>GPT-4o Mini (recommended)</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="extraction_api_key">API Key</label>
+                        <div class="api-key-input">
+                            <input type="password" id="extraction_api_key" name="api_key" 
+                                   value="{{ llm_extraction.api_key if llm_extraction else '' }}" 
+                                   placeholder="sk-or-v1-..." required>
+                            <button type="button" class="toggle-key" onclick="togglePassword('extraction_api_key')">Show</button>
+                        </div>
+                    </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="model_name">Model</label>
-                    <select id="model_name" name="model_name" required>
-                        {% if available_models %}
-                            {% for model in available_models %}
-                                <option value="{{ model.id }}" 
-                                        {% if llm_config and llm_config.model_name == model.id %}selected{% endif %}
-                                        {% if not llm_config and model.id == 'openai/gpt-4o-mini' %}selected{% endif %}>
-                                    {% if model.is_free %}🆓 {% endif %}{{ model.name }} ({{ model.id }})
-                                    {% if model.prompt_price|float == 0 and model.completion_price|float == 0 and not model.is_free %} - FREE{% endif %}
-                                    {% if model.prompt_price|float > 0 or model.completion_price|float > 0 %}
-                                        - ${{ "%.2f"|format(model.prompt_price|float * 1000000) }}/${{ "%.2f"|format(model.completion_price|float * 1000000) }}/1M tokens
-                                    {% endif %}
-                                </option>
-                            {% endfor %}
-                        {% else %}
-                            <option value="openai/gpt-4o-mini" selected>GPT-4o Mini (openai/gpt-4o-mini)</option>
-                            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                            <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
-                        {% endif %}
-                    </select>
-                    <div class="help-text">🆓 Free models are listed first</div>
+                <input type="hidden" name="base_url" value="https://openrouter.ai/api/v1">
+                <input type="hidden" name="is_active" value="1">
+                
+                <button type="submit" class="btn" style="background: #10b981; color: white;">
+                    💾 Save Extraction LLM
+                </button>
+                
+                {% if llm_extraction %}
+                <span style="color: #065f46; margin-left: 1rem;">
+                    ✓ Currently: {{ llm_extraction.model_name }}
+                </span>
+                {% endif %}
+            </form>
+        </div>
+        
+        <!-- Search LLM Configuration -->
+        <div class="card" style="background: #eff6ff; border: 2px solid #3b82f6; margin-bottom: 2rem;">
+            <h4 style="margin-top: 0; color: #1e40af;">🔎 Search LLM</h4>
+            <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">
+                Used for semantic AI-powered model search. Free models like Gemini Flash work great!
+            </p>
+            
+            <form method="POST" action="/settings/llm">
+                <input type="hidden" name="purpose" value="search">
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="search_model">Model</label>
+                        <select id="search_model" name="model_name" required>
+                            {% if available_models %}
+                                <optgroup label="🆓 FREE MODELS (Best for Search)">
+                                    {% for model in available_models if model.is_free %}
+                                        <option value="{{ model.id }}"
+                                                {% if llm_search and llm_search.model_name == model.id %}selected{% endif %}
+                                                {% if not llm_search and model.id == 'google/gemini-flash-1.5' %}selected{% endif %}>
+                                            {{ model.name }} - FREE
+                                        </option>
+                                    {% endfor %}
+                                </optgroup>
+                                <optgroup label="Paid Models">
+                                    {% for model in available_models[:20] if not model.is_free %}
+                                        <option value="{{ model.id }}"
+                                                {% if llm_search and llm_search.model_name == model.id %}selected{% endif %}>
+                                            {{ model.name }} - ${{ "%.2f"|format(model.prompt_price|float * 1000000) }}/1M
+                                        </option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% else %}
+                                <option value="google/gemini-flash-1.5" selected>Gemini Flash 1.5 (FREE)</option>
+                                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="search_api_key">API Key</label>
+                        <div class="api-key-input">
+                            <input type="password" id="search_api_key" name="api_key" 
+                                   value="{{ llm_search.api_key if llm_search else (llm_extraction.api_key if llm_extraction else '') }}" 
+                                   placeholder="sk-or-v1-... (can reuse extraction key)" required>
+                            <button type="button" class="toggle-key" onclick="togglePassword('search_api_key')">Show</button>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="form-group">
-                <label for="api_key">API Key</label>
-                <div class="api-key-input">
-                    <input type="password" id="api_key" name="api_key" 
-                           value="{{ llm_config.api_key if llm_config else '' }}" 
-                           placeholder="sk-or-v1-..." required>
-                    <button type="button" class="toggle-key" onclick="togglePassword('api_key')">Show</button>
-                </div>
-                <div class="help-text">Get your API key from <a href="https://openrouter.ai/keys" target="_blank">OpenRouter</a></div>
-            </div>
-            
-            <div class="form-group">
-                <label for="base_url">Base URL</label>
-                <input type="text" id="base_url" name="base_url" 
-                       value="{{ llm_config.base_url if llm_config else 'https://openrouter.ai/api/v1' }}" required>
-                <div class="help-text">API endpoint URL</div>
-            </div>
-            
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" name="is_active" {{ 'checked' if not llm_config or llm_config.is_active else '' }}>
-                    Active
-                </label>
-                <div class="help-text">Enable LLM extraction for pricing data</div>
-            </div>
-            
-            <button type="submit" class="btn btn-success">Save LLM Configuration</button>
-        </form>
+                
+                <input type="hidden" name="base_url" value="https://openrouter.ai/api/v1">
+                <input type="hidden" name="is_active" value="1">
+                
+                <button type="submit" class="btn" style="background: #3b82f6; color: white;">
+                    💾 Save Search LLM
+                </button>
+                
+                {% if llm_search %}
+                <span style="color: #1e40af; margin-left: 1rem;">
+                    ✓ Currently: {{ llm_search.model_name }}
+                </span>
+                {% endif %}
+            </form>
+        </div>
+        
+        <div style="background: #f9fafb; padding: 1rem; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <p style="font-size: 0.9rem; color: #6b7280; margin: 0;">
+                💡 <strong>Tip:</strong> You can use the same API key for both, but different models. 
+                Get your key at <a href="https://openrouter.ai/keys" target="_blank" style="color: #2563eb;">OpenRouter</a>
+            </p>
+        </div>
     </div>
     
     <!-- Extractor API Keys Tab -->

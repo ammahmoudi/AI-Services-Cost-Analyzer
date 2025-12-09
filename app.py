@@ -994,8 +994,13 @@ def settings():
     session = get_session()
     
     try:
-        # Get LLM configuration
-        llm_config = session.query(LLMConfiguration).filter_by(is_active=True).first()
+        # Get LLM configurations by purpose
+        llm_extraction = session.query(LLMConfiguration).filter_by(
+            is_active=True, purpose='extraction'
+        ).first()
+        llm_search = session.query(LLMConfiguration).filter_by(
+            is_active=True, purpose='search'
+        ).first()
         
         # Get extractor API keys
         together_key = session.query(ExtractorAPIKey).filter_by(extractor_name='together').first()
@@ -1011,7 +1016,8 @@ def settings():
         recommended = get_recommended_models()
         
         return render_template('settings.html',
-                             llm_config=llm_config,
+                             llm_extraction=llm_extraction,
+                             llm_search=llm_search,
                              together_key=together_key,
                              fal_auth=fal_auth,
                              runware_auth=runware_auth,
@@ -1027,40 +1033,31 @@ def save_llm_settings():
     session = get_session()
     
     try:
-        config_id = request.form.get('config_id')
         api_key = request.form.get('api_key')
         model_name = request.form.get('model_name', 'openai/gpt-4o-mini')
         base_url = request.form.get('base_url', 'https://openrouter.ai/api/v1')
-        is_active = 'is_active' in request.form
+        purpose = request.form.get('purpose', 'extraction')  # 'extraction' or 'search'
+        is_active = request.form.get('is_active', '1') == '1'
         
         if not api_key:
             flash('API key is required!', 'error')
             return redirect(url_for('settings'))
         
-        if config_id:
-            # Update existing
-            config = session.query(LLMConfiguration).filter_by(id=int(config_id)).first()
-            if config:
-                config.api_key = api_key
-                config.model_name = model_name
-                config.base_url = base_url
-                config.is_active = is_active
-                config.updated_at = datetime.utcnow()
-        else:
-            # Create new and deactivate others
-            if is_active:
-                session.query(LLMConfiguration).update({'is_active': False})
-            
-            config = LLMConfiguration(
-                api_key=api_key,
-                model_name=model_name,
-                base_url=base_url,
-                is_active=is_active
-            )
-            session.add(config)
+        # Deactivate all existing configs with same purpose
+        session.query(LLMConfiguration).filter_by(purpose=purpose).update({'is_active': False})
+        
+        # Create new config
+        config = LLMConfiguration(
+            api_key=api_key,
+            model_name=model_name,
+            base_url=base_url,
+            is_active=True,
+            purpose=purpose
+        )
+        session.add(config)
         
         session.commit()
-        flash('LLM configuration saved successfully!', 'success')
+        flash(f'{purpose.capitalize()} LLM configuration saved successfully!', 'success')
         
     except Exception as e:
         session.rollback()
@@ -3375,8 +3372,8 @@ def api_search_model_ai():
         if not query:
             return jsonify({'error': 'Search query is required'}), 400
         
-        # Get all models
-        all_models = session.query(AIModel).all()
+        # Get all models with joined source to avoid lazy loading
+        all_models = session.query(AIModel).join(APISource, AIModel.source_id == APISource.id, isouter=True).all()
         
         if not all_models:
             return jsonify({
