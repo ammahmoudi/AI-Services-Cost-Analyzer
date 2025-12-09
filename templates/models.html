@@ -11,6 +11,9 @@
             <button class="btn" style="background: #10b981;" onclick="showCreateModal()">
                 ➕ Create New Model
             </button>
+            <button class="btn" style="background: #f59e0b;" onclick="showRemoveDuplicatesDialog()" title="Remove duplicate models from selected source">
+                🔄 Remove Duplicates
+            </button>
             <button class="btn btn-danger" onclick="showDeleteAllDialog()" style="background: #dc2626;">
                 🗑️ Delete All Models
             </button>
@@ -743,6 +746,58 @@ function showDeleteAllDialog() {
         }
     })
     .catch(error => {
+        alert('Error: ' + error);
+    });
+}
+
+function showRemoveDuplicatesDialog() {
+    const sourceFilter = document.getElementById('sourceFilter');
+    const sourceId = sourceFilter.value;
+    const sourceName = sourceFilter.options[sourceFilter.selectedIndex].text;
+    
+    if (!sourceId) {
+        alert('Please select a source first to remove duplicates from that source.');
+        return;
+    }
+    
+    if (!confirm(`Find and remove duplicate models from ${sourceName}?\n\nThis will keep the newest version of each model and delete older duplicates.\n\nThis action cannot be undone!`)) {
+        return;
+    }
+    
+    // Show loading state
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Processing...';
+    
+    fetch(`/sources/${sourceId}/models/remove-duplicates`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        
+        if (data.success) {
+            if (data.deleted_count === 0) {
+                alert('✓ No duplicates found!');
+            } else {
+                const details = data.details && data.details.length > 0 
+                    ? '\n\nDuplicates removed:\n' + data.details.map(d => `  • ${d.model_id}: kept "${d.kept}", deleted ${d.deleted} duplicate(s)`).join('\n')
+                    : '';
+                alert(`✓ ${data.message}${details}`);
+                location.reload();
+            }
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
         alert('Error: ' + error);
     });
 }

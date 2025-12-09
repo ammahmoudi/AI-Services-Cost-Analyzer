@@ -732,6 +732,8 @@ def delete_model(model_id):
 @app.route('/sources/<int:source_id>/models/delete-all', methods=['POST'])
 def delete_all_models(source_id):
     """Delete all models from a specific source"""
+    from ai_cost_manager.models import ModelMatch
+    
     session = get_session()
     
     try:
@@ -739,22 +741,125 @@ def delete_all_models(source_id):
         if not source:
             return jsonify({'error': 'Source not found'}), 404
         
-        # Count models before deletion
-        model_count = session.query(AIModel).filter_by(source_id=source_id).count()
+        # Get all model IDs from this source
+        model_ids = [m.id for m in session.query(AIModel.id).filter_by(source_id=source_id).all()]
+        model_count = len(model_ids)
         
-        # Delete all models from this source
+        if model_count == 0:
+            return jsonify({
+                'success': True,
+                'deleted_count': 0,
+                'message': f'No models found for {source.name}'
+            })
+        
+        # Delete all model_matches for these models first
+        matches_deleted = session.query(ModelMatch).filter(
+            ModelMatch.ai_model_id.in_(model_ids)
+        ).delete(synchronize_session=False)
+        
+        # Now delete all models from this source
         session.query(AIModel).filter_by(source_id=source_id).delete()
         session.commit()
         
         return jsonify({
             'success': True,
             'deleted_count': model_count,
-            'message': f'Deleted {model_count} models from {source.name}'
+            'matches_deleted': matches_deleted,
+            'message': f'Deleted {model_count} models and {matches_deleted} matches from {source.name}'
         })
         
     except Exception as e:
         session.rollback()
         return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/sources/<int:source_id>/models/remove-duplicates', methods=['POST'])
+def remove_duplicate_models(source_id):
+    """Find and remove duplicate models from a specific source, keeping only the newest one"""
+    from ai_cost_manager.models import ModelMatch
+    from sqlalchemy import func
+    
+    session = get_session()
+    
+    try:
+        source = session.query(APISource).filter_by(id=source_id).first()
+        if not source:
+            return jsonify({'error': 'Source not found'}), 404
+        
+        # Find duplicates: group by model_id and source_id, having count > 1
+        duplicates_query = session.query(
+            AIModel.model_id,
+            func.count(AIModel.id).label('count')
+        ).filter(
+            AIModel.source_id == source_id
+        ).group_by(
+            AIModel.model_id
+        ).having(
+            func.count(AIModel.id) > 1
+        )
+        
+        duplicate_groups = duplicates_query.all()
+        
+        if not duplicate_groups:
+            return jsonify({
+                'success': True,
+                'deleted_count': 0,
+                'message': f'No duplicate models found for {source.name}'
+            })
+        
+        total_deleted = 0
+        matches_deleted = 0
+        duplicate_details = []
+        
+        # For each duplicate group, keep the newest and delete the rest
+        for model_id, count in duplicate_groups:
+            # Get all models with this model_id, ordered by created_at DESC (newest first)
+            models = session.query(AIModel).filter(
+                AIModel.source_id == source_id,
+                AIModel.model_id == model_id
+            ).order_by(AIModel.created_at.desc()).all()
+            
+            # Keep the first (newest), delete the rest
+            models_to_delete = models[1:]
+            
+            for model in models_to_delete:
+                # Delete model_matches first
+                match_count = session.query(ModelMatch).filter(
+                    ModelMatch.ai_model_id == model.id
+                ).delete()
+                matches_deleted += match_count
+                
+                # Delete the model
+                session.delete(model)
+                total_deleted += 1
+            
+            duplicate_details.append({
+                'model_id': model_id,
+                'total_found': count,
+                'deleted': len(models_to_delete),
+                'kept': models[0].name if models else 'unknown'
+            })
+        
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'deleted_count': total_deleted,
+            'matches_deleted': matches_deleted,
+            'duplicate_groups': len(duplicate_groups),
+            'details': duplicate_details,
+            'message': f'Removed {total_deleted} duplicate models from {source.name} ({len(duplicate_groups)} unique models had duplicates)'
+        })
+        
+    except Exception as e:
+        session.rollback()
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'trace': traceback.format_exc()
+        }), 500
     finally:
         close_session()
 
