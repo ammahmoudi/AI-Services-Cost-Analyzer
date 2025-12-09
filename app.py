@@ -2870,9 +2870,23 @@ def api_search_model():
         if not name:
             return jsonify({'error': 'Model name is required'}), 400
         
-        # Search for models matching the name (case-insensitive, partial match)
+        # Normalize search query for better matching
+        # Remove common separators and convert to lowercase
+        search_normalized = name.lower().replace('-', '').replace('_', '').replace('.', '').replace(' ', '')
+        
+        # Search for models using multiple strategies:
+        # 1. Direct name match (case-insensitive)
+        # 2. Model ID match (case-insensitive)
+        # 3. Normalized match (removes separators)
+        from sqlalchemy import or_, func
+        
         models = session.query(AIModel).filter(
-            AIModel.name.ilike(f'%{name}%')
+            or_(
+                AIModel.name.ilike(f'%{name}%'),
+                AIModel.model_id.ilike(f'%{name}%'),
+                func.replace(func.replace(func.replace(func.lower(AIModel.name), '-', ''), '_', ''), '.', '').like(f'%{search_normalized}%'),
+                func.replace(func.replace(func.replace(func.lower(AIModel.model_id), '-', ''), '_', ''), '.', '').like(f'%{search_normalized}%')
+            )
         ).all()
         
         if not models:
