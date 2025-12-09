@@ -2902,35 +2902,70 @@ def api_search_model():
         matched_results = []
         
         for data in model_search_data:
+            model_name = data['name'].lower()
+            model_id = data['model_id'].lower()
+            search_query = name.lower()
+            
             # Calculate multiple similarity scores
-            name_score = fuzz.partial_ratio(name.lower(), data['name'].lower())
-            model_id_score = fuzz.partial_ratio(name.lower(), data['model_id'].lower())
+            name_score = fuzz.partial_ratio(search_query, model_name)
+            model_id_score = fuzz.partial_ratio(search_query, model_id)
             
-            # For more accurate matching, use token_sort for exact word matching
-            token_sort_name = fuzz.token_sort_ratio(name.lower(), data['name'].lower())
-            token_sort_model_id = fuzz.token_sort_ratio(name.lower(), data['model_id'].lower())
+            # Token-based matching (handles word order)
+            token_sort_name = fuzz.token_sort_ratio(search_query, model_name)
+            token_sort_model_id = fuzz.token_sort_ratio(search_query, model_id)
             
-            # Use WRatio for best overall matching
-            wratio_name = fuzz.WRatio(name.lower(), data['name'].lower())
-            wratio_model_id = fuzz.WRatio(name.lower(), data['model_id'].lower())
+            # WRatio for best overall matching
+            wratio_name = fuzz.WRatio(search_query, model_name)
+            wratio_model_id = fuzz.WRatio(search_query, model_id)
             
-            # Calculate weighted score - prioritize name and model_id over description
-            # Higher weight for exact name/model_id matches
+            # Exact substring bonus - heavily prioritize exact matches in name/model_id
+            exact_name_bonus = 50 if search_query in model_name else 0
+            exact_model_id_bonus = 45 if search_query in model_id else 0
+            
+            # Version/number matching bonus - if search has numbers, prioritize exact number matches
+            import re
+            search_numbers = re.findall(r'\d+\.?\d*', search_query)
+            name_numbers = re.findall(r'\d+\.?\d*', model_name)
+            model_id_numbers = re.findall(r'\d+\.?\d*', model_id)
+            
+            # Bonus if version numbers match exactly
+            version_bonus = 0
+            if search_numbers:
+                for num in search_numbers:
+                    if num in name_numbers or num in model_id_numbers:
+                        version_bonus += 30  # Strong bonus for version match
+                    # Penalize if search has version but model has different version
+                    elif name_numbers or model_id_numbers:
+                        version_bonus -= 20  # Penalty for version mismatch
+            
+            # Calculate weighted score - heavily prioritize name/model_id with exact and version bonuses
             max_primary_score = max(name_score, model_id_score, token_sort_name, token_sort_model_id, wratio_name, wratio_model_id)
-            weighted_score = (wratio_name * 2.0 + wratio_model_id * 1.8 + name_score * 1.5 + 
-                            model_id_score * 1.3 + token_sort_name * 1.2 + token_sort_model_id * 1.0) / 9.8
+            weighted_score = (
+                wratio_name * 2.0 + 
+                wratio_model_id * 1.8 + 
+                name_score * 1.5 + 
+                model_id_score * 1.3 + 
+                token_sort_name * 1.2 + 
+                token_sort_model_id * 1.0 +
+                exact_name_bonus +
+                exact_model_id_bonus +
+                version_bonus
+            ) / 9.8
             
-            # Use a balanced threshold - not too strict, not too loose
-            # "flux pro 1.1" should match "flux-1.1-pro" (token_sort will score high)
-            if max_primary_score >= 60 or weighted_score >= 55:  # More lenient threshold
+            # Use balanced threshold with version awareness
+            # If search has version numbers, require higher match quality
+            min_threshold = 65 if search_numbers else 55
+            
+            if max_primary_score >= 60 or weighted_score >= min_threshold:
                 matched_results.append({
                     'model': data['model'],
                     'score': weighted_score,
-                    'max_score': max_primary_score
+                    'max_score': max_primary_score,
+                    'has_version_match': version_bonus > 0
                 })
         
-        # Sort by weighted score descending
-        matched_results.sort(key=lambda x: (x['score'], x['max_score']), reverse=True)
+        # Sort by: 1) version match first, 2) weighted score, 3) max score
+        matched_results.sort(key=lambda x: (x['has_version_match'], x['score'], x['max_score']), reverse=True)
         
         # Extract top matches (limit to top 50 to avoid too many results)
         models = [r['model'] for r in matched_results[:50]]
