@@ -6,7 +6,7 @@ Handles matching models across providers and finding alternatives
 
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, text
+from sqlalchemy import and_, text as sql_text
 from ai_cost_manager.models import AIModel, CanonicalModel, ModelMatch, APISource
 from ai_cost_manager.model_matcher import ModelMatcher
 from ai_cost_manager.model_types import VALID_MODEL_TYPES
@@ -77,13 +77,13 @@ class ModelMatchingService:
             print("🧹 Clearing existing matches...")
             # Refresh connection before large delete operations
             try:
-                self.session.execute(text("SELECT 1"))
+                self.session.execute(sql_text("SELECT 1"))
             except Exception as e:
                 print(f"  ⚠️  Connection lost before cleanup, reconnecting: {e}")
                 self.session.rollback()
                 from ai_cost_manager.database import engine
                 engine.dispose()
-                self.session.execute(text("SELECT 1"))
+                self.session.execute(sql_text("SELECT 1"))
             
             # Delete in smaller batches to avoid timeouts
             try:
@@ -100,7 +100,7 @@ class ModelMatchingService:
                 from ai_cost_manager.database import engine
                 engine.dispose()
                 # Try again after reconnection
-                self.session.execute(text("SELECT 1"))
+                self.session.execute(sql_text("SELECT 1"))
                 self.session.query(ModelMatch).delete()
                 self.session.commit()
                 self.session.query(CanonicalModel).delete()
@@ -113,8 +113,7 @@ class ModelMatchingService:
         # Refresh connection before database writes to prevent timeout
         try:
             # Test connection with a simple scalar query
-            from sqlalchemy import text
-            self.session.execute(text('SELECT 1')).scalar()
+            self.session.execute(sql_text('SELECT 1')).scalar()
         except Exception as e:
             print(f"⚠️  Database connection stale, refreshing: {e}")
             self.session.rollback()
@@ -205,7 +204,7 @@ class ModelMatchingService:
                         print(f"  💾 Committed {created_matches} matches...")
                         
                         # Test connection health after commit
-                        self.session.execute(text("SELECT 1"))
+                        self.session.execute(sql_text("SELECT 1"))
                     except Exception as e:
                         print(f"  ⚠️  Batch commit failed, reconnecting: {e}")
                         self.session.rollback()
@@ -213,7 +212,7 @@ class ModelMatchingService:
                         from ai_cost_manager.database import engine
                         engine.dispose()
                         # Verify reconnection works
-                        self.session.execute(text("SELECT 1"))
+                        self.session.execute(sql_text("SELECT 1"))
         
         # Final commit with error handling
         try:
