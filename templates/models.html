@@ -171,6 +171,15 @@
                         {% if model.description %}
                             <br><small style="color: #6b7280;">{{ model.description[:80] }}{% if model.description|length > 80 %}...{% endif %}</small>
                         {% endif %}
+                        {% if model.parsed_version or model.parsed_company or model.parsed_size %}
+                            <br>
+                            <div style="margin-top: 0.25rem; font-size: 0.8rem; color: #6b7280;">
+                                {% if model.parsed_company %}<span style="color: #3b82f6;">{{ model.parsed_company }}</span>{% endif %}
+                                {% if model.parsed_model_family %}<span style="margin-left: 0.25rem;">{{ model.parsed_model_family }}</span>{% endif %}
+                                {% if model.parsed_version %}<span style="margin-left: 0.25rem; font-weight: 600; color: #2563eb;">v{{ model.parsed_version }}</span>{% endif %}
+                                {% if model.parsed_size %}<span style="margin-left: 0.25rem; font-weight: 600;">{{ model.parsed_size }}</span>{% endif %}
+                            </div>
+                        {% endif %}
                     </td>
                     <td><span class="badge badge-blue">{{ model.model_type }}</span></td>
                     <td>

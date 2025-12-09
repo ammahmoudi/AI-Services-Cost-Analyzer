@@ -21,11 +21,12 @@ class LLMConfiguration(Base):
     model_name = Column(String(200), default='openai/gpt-4o-mini')
     base_url = Column(String(500), default='https://openrouter.ai/api/v1')
     is_active = Column(Boolean, default=True)
+    purpose = Column(String(50), default='extraction')  # 'extraction' or 'search'
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def __repr__(self):
-        return f"<LLMConfiguration(model='{self.model_name}', active={self.is_active})>"
+        return f"<LLMConfiguration(model='{self.model_name}', purpose='{self.purpose}', active={self.is_active})>"
 
 
 class ExtractorAPIKey(Base):

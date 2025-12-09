@@ -224,6 +224,14 @@ function displayResults(data) {
                             <span style="color: #6b7280; font-size: 0.9rem;">${model.provider}</span>
                         </div>
                         ${model.description ? `<p style="color: #4b5563; font-size: 0.9rem; margin: 0.5rem 0 0 0;">${model.description}</p>` : ''}
+                        ${model.parsed_company || model.parsed_model_family || model.parsed_version || model.parsed_size ? `
+                            <div style="color: #6b7280; font-size: 0.8rem; margin-top: 0.5rem;">
+                                ${model.parsed_company ? `<span style="color: #3b82f6;">${model.parsed_company}</span>` : ''}
+                                ${model.parsed_model_family && model.parsed_model_family !== model.parsed_company ? ` ${model.parsed_model_family}` : ''}
+                                ${model.parsed_version ? ` <span style="font-weight: bold; color: #3b82f6;">v${model.parsed_version}</span>` : ''}
+                                ${model.parsed_size ? ` <span style="font-weight: bold;">${model.parsed_size}</span>` : ''}
+                            </div>
+                        ` : ''}
                     </div>
                     <div style="text-align: right; margin-left: 2rem;">
                         <div style="font-size: 1.5rem; font-weight: 700; color: ${isCheapest ? '#10b981' : '#2563eb'};">

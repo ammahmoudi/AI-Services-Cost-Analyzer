@@ -4,7 +4,7 @@ LLM Client Utility
 Provides unified chat/completion endpoint logic for OpenRouter and OpenAI-compatible APIs.
 """
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from ai_cost_manager.models import LLMConfiguration
 
 class LLMClient:
@@ -177,3 +177,29 @@ class LLMClient:
                 data['model_type'] = normalized
         
         return data
+
+
+def get_llm_client(purpose: str = 'extraction') -> Optional['LLMClient']:
+    """Get active LLM client for the specified purpose
+    
+    Args:
+        purpose: Either 'extraction' or 'search'
+        
+    Returns:
+        LLMClient instance or None if not configured
+    """
+    from ai_cost_manager.database import get_session
+    
+    session = get_session()
+    try:
+        config = session.query(LLMConfiguration).filter_by(
+            is_active=True,
+            purpose=purpose
+        ).first()
+        
+        if not config:
+            return None
+            
+        return LLMClient(config)
+    finally:
+        session.close()

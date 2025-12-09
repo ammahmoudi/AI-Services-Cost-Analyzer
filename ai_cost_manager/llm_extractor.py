@@ -7,7 +7,7 @@ import json
 from typing import Dict, Any, Optional
 from ai_cost_manager.database import get_session
 from ai_cost_manager.models import LLMConfiguration
-from ai_cost_manager.llm_client import LLMClient
+from ai_cost_manager.llm_client import LLMClient, get_llm_client
 
 
 class LLMPricingExtractor:
@@ -19,10 +19,13 @@ class LLMPricingExtractor:
         self.config = self._load_config()
     
     def _load_config(self) -> Optional[LLMConfiguration]:
-        """Load active LLM configuration from database"""
+        """Load active LLM configuration from database for extraction"""
         session = get_session()
         try:
-            config = session.query(LLMConfiguration).filter_by(is_active=True).first()
+            config = session.query(LLMConfiguration).filter_by(
+                is_active=True,
+                purpose='extraction'
+            ).first()
             return config
         finally:
             session.close()
@@ -301,7 +304,37 @@ CRITICAL RULES:
 - If pricing shows "img/$" (images per dollar), calculate: cost_per_call = 1 / images_per_dollar
 - Always extract numeric values from pricing_variables (e.g., "28 steps" → 28, not "28")
 - cost_per_call should be a realistic USD amount (typically 0.0001 to 10.0)
-- Return ONLY valid JSON with no markdown, no explanations, no code blocks"""
+- Return ONLY valid JSON with no markdown, no explanations, no code blocks
+
+ALSO PARSE MODEL NAME COMPONENTS (REQUIRED):
+Parse the model name into structured components and include these fields:
+- parsed_company: Company/provider name (e.g., "OpenAI", "Anthropic", "Black Forest Labs")
+- parsed_model_family: Model family/series (e.g., "GPT", "Claude", "FLUX", "Stable Diffusion")
+- parsed_version: Version number (e.g., "4", "3.5", "1.1", "2.1")
+- parsed_size: Model size/variant (e.g., "8B", "70B", "mini", "large", "pro", "ultra")
+- parsed_variants: Array of variant keywords (e.g., ["turbo", "instruct"], ["schnell", "dev"])
+- parsed_modes: Array of mode/capability keywords (e.g., ["vision", "tool-use"], ["inpainting", "depth"])
+
+Example parsed components:
+"OpenAI GPT-4 Turbo Vision" → {{
+  "parsed_company": "OpenAI",
+  "parsed_model_family": "GPT",
+  "parsed_version": "4",
+  "parsed_size": "turbo",
+  "parsed_variants": ["turbo"],
+  "parsed_modes": ["vision"]
+}}
+
+"BFL FLUX.1.1 Pro" → {{
+  "parsed_company": "Black Forest Labs",
+  "parsed_model_family": "FLUX",
+  "parsed_version": "1.1",
+  "parsed_size": "pro",
+  "parsed_variants": ["pro"],
+  "parsed_modes": []
+}}
+
+Return complete JSON with BOTH pricing AND parsed name components."""
         
         return prompt
     

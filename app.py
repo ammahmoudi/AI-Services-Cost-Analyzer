@@ -1140,7 +1140,12 @@ def llm_config():
     
     try:
         configs = session.query(LLMConfiguration).all()
-        active_config = session.query(LLMConfiguration).filter_by(is_active=True).first()
+        active_extraction = session.query(LLMConfiguration).filter_by(
+            is_active=True, purpose='extraction'
+        ).first()
+        active_search = session.query(LLMConfiguration).filter_by(
+            is_active=True, purpose='search'
+        ).first()
         
         # Fetch available models (without requiring API key) and sort with free models first
         available_models = fetch_openrouter_models(sort_by_free=True)
@@ -1148,7 +1153,8 @@ def llm_config():
         
         return render_template('llm_config.html',
                              configs=configs,
-                             active_config=active_config,
+                             active_extraction=active_extraction,
+                             active_search=active_search,
                              available_models=available_models,
                              recommended_models=recommended)
     finally:
@@ -1164,26 +1170,28 @@ def save_llm_config():
         api_key = request.form.get('api_key')
         model_name = request.form.get('model_name', 'openai/gpt-4o-mini')
         base_url = request.form.get('base_url', 'https://openrouter.ai/api/v1')
+        purpose = request.form.get('purpose', 'extraction')  # 'extraction' or 'search'
         
         if not api_key:
             flash('API key is required!', 'error')
             return redirect(url_for('llm_config'))
         
-        # Deactivate all existing configs
-        session.query(LLMConfiguration).update({'is_active': False})
+        # Deactivate all existing configs with same purpose
+        session.query(LLMConfiguration).filter_by(purpose=purpose).update({'is_active': False})
         
         # Create new config
         config = LLMConfiguration(
             api_key=api_key,
             model_name=model_name,
             base_url=base_url,
-            is_active=True
+            is_active=True,
+            purpose=purpose
         )
         
         session.add(config)
         session.commit()
         
-        flash('LLM configuration saved successfully!', 'success')
+        flash(f'LLM configuration for {purpose} saved successfully!', 'success')
         
     except Exception as e:
         session.rollback()
@@ -1200,17 +1208,18 @@ def activate_llm_config(config_id):
     session = get_session()
     
     try:
-        # Deactivate all
-        session.query(LLMConfiguration).update({'is_active': False})
+        config = session.query(LLMConfiguration).filter_by(id=config_id).first()
+        if not config:
+            flash('Configuration not found!', 'error')
+            return redirect(url_for('llm_config'))
+        
+        # Deactivate all configs with same purpose
+        session.query(LLMConfiguration).filter_by(purpose=config.purpose).update({'is_active': False})
         
         # Activate selected
-        config = session.query(LLMConfiguration).filter_by(id=config_id).first()
-        if config:
-            config.is_active = True
-            session.commit()
-            flash(f'Activated configuration with model {config.model_name}', 'success')
-        else:
-            flash('Configuration not found!', 'error')
+        config.is_active = True
+        session.commit()
+        flash(f'Activated {config.purpose} configuration with model {config.model_name}', 'success')
             
     except Exception as e:
         session.rollback()
@@ -3111,8 +3120,8 @@ def api_search_model():
             reverse=True
         )
         
-        # Extract top matches (limit to top 20 to show most relevant results)
-        models = [r['model'] for r in matched_results[:20]]
+        # Extract all matching models (no limit)
+        models = [r['model'] for r in matched_results]
         
         if not models:
             return jsonify({
@@ -3145,6 +3154,12 @@ def api_search_model():
                 'cost_unit': model.cost_unit,
                 'description': model.description,
                 'tags': model.tags or [],
+                'parsed_company': model.parsed_company,
+                'parsed_model_family': model.parsed_model_family,
+                'parsed_version': model.parsed_version,
+                'parsed_size': model.parsed_size,
+                'parsed_variants': model.parsed_variants or [],
+                'parsed_modes': model.parsed_modes or [],
             }
             model_list.append(model_data)
             
@@ -3239,7 +3254,7 @@ def fallback_semantic_search(query, all_models, session):
     
     # Sort by score
     matched_models.sort(key=lambda x: x[1], reverse=True)
-    matched_models = [m[0] for m in matched_models[:20]]
+    matched_models = [m[0] for m in matched_models]  # Return all matches
     
     if not matched_models:
         return jsonify({
@@ -3272,6 +3287,12 @@ def fallback_semantic_search(query, all_models, session):
             'cost_unit': model.cost_unit,
             'description': model.description,
             'tags': model.tags or [],
+            'parsed_company': model.parsed_company,
+            'parsed_model_family': model.parsed_model_family,
+            'parsed_version': model.parsed_version,
+            'parsed_size': model.parsed_size,
+            'parsed_variants': model.parsed_variants or [],
+            'parsed_modes': model.parsed_modes or [],
         }
         model_list.append(model_data)
         
@@ -3327,18 +3348,18 @@ def api_search_model_ai():
         
         try:
             from ai_cost_manager.llm_client import get_llm_client
-            llm_client = get_llm_client()
+            llm_client = get_llm_client(purpose='search')
         except (ImportError, AttributeError):
             # LLM client not available, use fallback
             return fallback_semantic_search(query, all_models, session)
         
         if not llm_client:
-            # LLM not configured, use fallback
+            # LLM not configured for search, use fallback
             return fallback_semantic_search(query, all_models, session)
         
         # Prepare model data for LLM
         models_summary = []
-        for i, model in enumerate(all_models[:200], 1):  # Limit to 200 for token limits
+        for i, model in enumerate(all_models, 1):  # Use all models
             models_summary.append({
                 'index': i,
                 'name': model.name,
@@ -3363,9 +3384,9 @@ Consider:
 User's query: "{query}"
 
 Available models:
-{chr(10).join([f"{m['index']}. {m['name']} ({m['model_id']}) - {m['type']} - {m['provider']} - ${m['cost'] if m['cost'] else 'N/A'}/call - {m['description'][:100]}" for m in models_summary[:50]])}
+{chr(10).join([f"{m['index']}. {m['name']} ({m['model_id']}) - {m['type']} - {m['provider']} - ${m['cost'] if m['cost'] else 'N/A'}/call - {m['description'][:100]}" for m in models_summary[:100]])}
 
-Return ONLY a JSON array of the top 20 matching model indices, ordered by relevance. Example: [5, 12, 3, 18, 7, ...]
+Return ONLY a JSON array of ALL matching model indices, ordered by relevance (most relevant first). Example: [5, 12, 3, 18, 7, ...]
 
 Important: Return ONLY the JSON array, no other text."""
 
@@ -3385,7 +3406,7 @@ Important: Return ONLY the JSON array, no other text."""
             
             # Get matching models
             matched_models = []
-            for idx in indices[:20]:  # Top 20
+            for idx in indices:  # All matches
                 if 1 <= idx <= len(models_summary):
                     model = all_models[idx - 1]
                     matched_models.append(model)
@@ -3421,6 +3442,12 @@ Important: Return ONLY the JSON array, no other text."""
                     'cost_unit': model.cost_unit,
                     'description': model.description,
                     'tags': model.tags or [],
+                    'parsed_company': model.parsed_company,
+                    'parsed_model_family': model.parsed_model_family,
+                    'parsed_version': model.parsed_version,
+                    'parsed_size': model.parsed_size,
+                    'parsed_variants': model.parsed_variants or [],
+                    'parsed_modes': model.parsed_modes or [],
                 }
                 model_list.append(model_data)
                 

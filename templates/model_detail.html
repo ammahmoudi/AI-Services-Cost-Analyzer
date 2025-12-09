@@ -32,6 +32,50 @@
     </div>
     {% endif %}
     
+    {% if model.parsed_company or model.parsed_model_family or model.parsed_version or model.parsed_size %}
+    <div style="margin: 1.5rem 0; padding: 1rem; background: #f0f9ff; border-left: 4px solid #3b82f6; border-radius: 4px;">
+        <h3 style="margin: 0 0 0.75rem 0; color: #1e40af; font-size: 0.95rem;">📋 Parsed Components</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 1rem;">
+            {% if model.parsed_company %}
+            <div>
+                <span style="color: #6b7280; font-size: 0.85rem;">Company:</span>
+                <span style="margin-left: 0.25rem; font-weight: 600; color: #1f2937;">{{ model.parsed_company }}</span>
+            </div>
+            {% endif %}
+            {% if model.parsed_model_family %}
+            <div>
+                <span style="color: #6b7280; font-size: 0.85rem;">Family:</span>
+                <span style="margin-left: 0.25rem; font-weight: 600; color: #1f2937;">{{ model.parsed_model_family }}</span>
+            </div>
+            {% endif %}
+            {% if model.parsed_version %}
+            <div>
+                <span style="color: #6b7280; font-size: 0.85rem;">Version:</span>
+                <span style="margin-left: 0.25rem; font-weight: 600; color: #2563eb;">{{ model.parsed_version }}</span>
+            </div>
+            {% endif %}
+            {% if model.parsed_size %}
+            <div>
+                <span style="color: #6b7280; font-size: 0.85rem;">Size:</span>
+                <span style="margin-left: 0.25rem; font-weight: 600; color: #1f2937;">{{ model.parsed_size }}</span>
+            </div>
+            {% endif %}
+            {% if model.parsed_variants %}
+            <div>
+                <span style="color: #6b7280; font-size: 0.85rem;">Variants:</span>
+                <span style="margin-left: 0.25rem; font-weight: 600; color: #1f2937;">{{ model.parsed_variants|join(', ') }}</span>
+            </div>
+            {% endif %}
+            {% if model.parsed_modes %}
+            <div>
+                <span style="color: #6b7280; font-size: 0.85rem;">Modes:</span>
+                <span style="margin-left: 0.25rem; font-weight: 600; color: #1f2937;">{{ model.parsed_modes|join(', ') }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 2rem 0;">
         <div>
             <h3 style="color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem;">Model ID</h3>

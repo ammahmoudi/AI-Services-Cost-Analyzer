@@ -4,19 +4,14 @@
 <div class="card">
     <h2>🤖 LLM Configuration</h2>
     <p style="color: #6b7280; margin-bottom: 1.5rem;">
-        Configure an LLM (via OpenRouter) to intelligently extract detailed pricing information from model descriptions.
+        Configure LLMs for extraction and search. Choose different models for each purpose.
     </p>
     
     <div style="background: #f9fafb; padding: 1rem; border-radius: 4px; margin-bottom: 2rem;">
         <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">What does this do?</h3>
-        <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 0.5rem;">
-            The LLM analyzes pricing text like "$0.045/sec" or "100 credits" and extracts:
-        </p>
         <ul style="color: #6b7280; font-size: 0.9rem; margin-left: 1.5rem;">
-            <li><strong>Pricing type</strong>: fixed, per-token, per-second, per-image, etc.</li>
-            <li><strong>Cost units</strong>: tokens, seconds, images, calls, etc.</li>
-            <li><strong>Pricing formula</strong>: how the cost is calculated</li>
-            <li><strong>Variables</strong>: what affects the pricing (resolution, duration, etc.)</li>
+            <li><strong>Extraction LLM:</strong> Analyzes model descriptions to extract pricing, types, and name components (company, version, size, etc.)</li>
+            <li><strong>Search LLM:</strong> Powers semantic AI search to find models by natural language queries</li>
         </ul>
     </div>
     
@@ -28,15 +23,24 @@
             3. Copy the key and paste it below
         </p>
         <p style="color: #1e40af; font-size: 0.85rem;">
-            <strong>Recommended model:</strong> openai/gpt-4o-mini (fast and affordable)
+            <strong>Recommended models:</strong> openai/gpt-4o-mini (extraction), google/gemini-flash-1.5 (search - free!)
         </p>
     </div>
     
     <form method="POST" action="/llm-config/save" style="margin-bottom: 2rem;">
         <div class="form-group">
+            <label>Purpose *</label>
+            <select name="purpose" required style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
+                <option value="extraction">🔍 Extraction - Extract pricing & parse model names</option>
+                <option value="search">🔎 Search - Semantic AI search</option>
+            </select>
+            <small style="color: #6b7280;">Choose what this LLM will be used for</small>
+        </div>
+        
+        <div class="form-group">
             <label>OpenRouter API Key *</label>
             <input type="password" name="api_key" required placeholder="sk-or-v1-..." 
-                   value="{{ active_config.api_key if active_config else '' }}">
+                   value="{{ active_extraction.api_key if active_extraction else (active_search.api_key if active_search else '') }}">
             <small style="color: #6b7280;">Your API key is stored securely in the database</small>
         </div>
         
@@ -44,22 +48,20 @@
             <label>Model Name</label>
             {% if available_models %}
                 <select name="model_name" style="width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px;">
-                    <optgroup label="🆓 FREE MODELS">
+                    <optgroup label="🆓 FREE MODELS (Best for Search)">
                         {% for model in available_models %}
                             {% if model.is_free %}
-                                <option value="{{ model.id }}" 
-                                        {% if active_config and active_config.model_name == model.id %}selected{% endif %}>
+                                <option value="{{ model.id }}">
                                     {{ model.name }} ({{ model.context_length|default('N/A', true) }} tokens) - FREE
                                 </option>
                             {% endif %}
                         {% endfor %}
                     </optgroup>
-                    <optgroup label="⭐ Recommended for Pricing Extraction">
+                    <optgroup label="⭐ Recommended for Extraction">
                         {% for model in available_models %}
                             {% if model.id in recommended_models and not model.is_free %}
-                                <option value="{{ model.id }}" 
-                                        {% if active_config and active_config.model_name == model.id %}selected{% endif %}
-                                        {% if not active_config and model.id == 'openai/gpt-4o-mini' %}selected{% endif %}>
+                                <option value="{{ model.id }}"
+                                        {% if model.id == 'openai/gpt-4o-mini' %}selected{% endif %}>
                                     {{ model.name }}
                                     {% if model.prompt_price and model.completion_price %}
                                         (${{ "%.3f"|format(model.prompt_price|float * 1000000) }}/${{ "%.3f"|format(model.completion_price|float * 1000000) }} per 1M)
@@ -71,8 +73,7 @@
                     <optgroup label="All Paid Models ({{ available_models|selectattr('is_free', 'equalto', false)|list|length }} total)">
                         {% for model in available_models[:50] %}
                             {% if model.id not in recommended_models and not model.is_free %}
-                                <option value="{{ model.id }}" 
-                                        {% if active_config and active_config.model_name == model.id %}selected{% endif %}>
+                                <option value="{{ model.id }}">
                                     {{ model.name }}
                                     {% if model.prompt_price and model.completion_price %}
                                         - ${{ "%.3f"|format(model.prompt_price|float * 1000000) }}/${{ "%.3f"|format(model.completion_price|float * 1000000) }} per 1M
@@ -88,9 +89,9 @@
                 </small>
             {% else %}
                 <input type="text" name="model_name" placeholder="openai/gpt-4o-mini"
-                       value="{{ active_config.model_name if active_config else 'openai/gpt-4o-mini' }}">
+                       value="openai/gpt-4o-mini">
                 <small style="color: #6b7280;">
-                    Popular options: openai/gpt-4o-mini, anthropic/claude-3.5-sonnet, google/gemini-pro
+                    Popular options: openai/gpt-4o-mini, anthropic/claude-3.5-sonnet, google/gemini-flash-1.5 (free)
                 </small>
             {% endif %}
         </div>
@@ -98,7 +99,7 @@
         <div class="form-group">
             <label>Base URL</label>
             <input type="url" name="base_url" placeholder="https://openrouter.ai/api/v1"
-                   value="{{ active_config.base_url if active_config else 'https://openrouter.ai/api/v1' }}">
+                   value="https://openrouter.ai/api/v1">
         </div>
         
         <button type="submit" class="btn">💾 Save Configuration</button>
@@ -108,10 +109,62 @@
 {% if configs %}
 <div class="card">
     <h2>Saved Configurations</h2>
+    
+    <h3 style="font-size: 1.1rem; margin-top: 1.5rem; margin-bottom: 1rem;">🔍 Extraction LLM</h3>
+    <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">
+        Used for extracting pricing details and parsing model name components (company, version, size, etc.)
+    </p>
+    {% if active_extraction %}
+    <div style="background: #f0fdf4; border: 2px solid #10b981; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <strong style="color: #065f46;">{{ active_extraction.model_name }}</strong>
+                <span class="badge badge-green" style="margin-left: 0.5rem;">Active</span>
+                <br><small style="color: #6b7280;">{{ active_extraction.provider }}</small>
+            </div>
+            <form method="POST" action="/llm-config/{{ active_extraction.id }}/delete" style="display: inline;">
+                <button type="submit" class="btn btn-small btn-danger" 
+                        onclick="return confirm('Delete this configuration?')">Delete</button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div style="background: #fef2f2; border: 1px solid #fca5a5; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <p style="color: #991b1b; font-size: 0.9rem;">❌ No extraction LLM configured. Add one above.</p>
+    </div>
+    {% endif %}
+    
+    <h3 style="font-size: 1.1rem; margin-top: 2rem; margin-bottom: 1rem;">🔎 Search LLM</h3>
+    <p style="color: #6b7280; font-size: 0.9rem; margin-bottom: 1rem;">
+        Used for semantic AI-powered model search (natural language queries)
+    </p>
+    {% if active_search %}
+    <div style="background: #f0f9ff; border: 2px solid #3b82f6; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <strong style="color: #1e40af;">{{ active_search.model_name }}</strong>
+                <span class="badge badge-blue" style="margin-left: 0.5rem;">Active</span>
+                <br><small style="color: #6b7280;">{{ active_search.provider }}</small>
+            </div>
+            <form method="POST" action="/llm-config/{{ active_search.id }}/delete" style="display: inline;">
+                <button type="submit" class="btn btn-small btn-danger" 
+                        onclick="return confirm('Delete this configuration?')">Delete</button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div style="background: #fffbeb; border: 1px solid #fcd34d; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <p style="color: #92400e; font-size: 0.9rem;">⚠️ No search LLM configured. AI search will use keyword fallback.</p>
+    </div>
+    {% endif %}
+    
+    {% if configs|length > 2 %}
+    <h3 style="font-size: 1.1rem; margin-top: 2rem; margin-bottom: 1rem;">Other Configurations</h3>
     <table>
         <thead>
             <tr>
                 <th>Model</th>
+                <th>Purpose</th>
                 <th>Status</th>
                 <th>Created</th>
                 <th>Actions</th>
@@ -119,10 +172,16 @@
         </thead>
         <tbody>
             {% for config in configs %}
+            {% if config != active_extraction and config != active_search %}
             <tr>
                 <td>
                     <strong>{{ config.model_name }}</strong>
                     <br><small style="color: #6b7280;">{{ config.provider }}</small>
+                </td>
+                <td>
+                    <span class="badge {% if config.purpose == 'extraction' %}badge-green{% else %}badge-blue{% endif %}">
+                        {{ config.purpose }}
+                    </span>
                 </td>
                 <td>
                     {% if config.is_active %}
@@ -144,9 +203,11 @@
                     </form>
                 </td>
             </tr>
+            {% endif %}
             {% endfor %}
         </tbody>
     </table>
+    {% endif %}
 </div>
 {% endif %}
 
