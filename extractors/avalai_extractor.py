@@ -326,11 +326,25 @@ class AvalAIExtractor(BaseExtractor):
             'نرخ تبدیل',  # Exchange rate in Persian
             'تومان',  # Toman (Iranian currency)
             'دلار',  # Dollar in Persian
+            'کم',  # Persian text meaning "less" or "amount"
+            'نرخ',  # Exchange rate
+            'تتر',  # Tether
+            'استفاده',  # Usage
+            'برای',  # For
         ]
         
         model_ids_lower = model_ids_cell.lower()
         if any(keyword in model_ids_lower for keyword in skip_keywords):
             return []
+        
+        # Also skip if the text contains mostly Persian characters (non-ASCII)
+        # Model IDs should be mostly ASCII/English
+        if model_ids_cell.strip():
+            # Count Persian/Arabic characters (Unicode range)
+            persian_chars = sum(1 for c in model_ids_cell if '\u0600' <= c <= '\u06FF' or '\uFB50' <= c <= '\uFDFF')
+            total_chars = len([c for c in model_ids_cell if c.strip() and c != '`' and c != '|'])
+            if total_chars > 0 and persian_chars / total_chars > 0.3:  # If more than 30% Persian
+                return []
         
         model_ids = self._extract_model_ids_from_markdown(model_ids_cell)
         
@@ -385,8 +399,12 @@ class AvalAIExtractor(BaseExtractor):
                     if model_id and not model_id.startswith('~~'):
                         # Clean up strikethrough
                         model_id = model_id.replace('~~', '')
+                        
+                        # Skip if model_id contains Persian/Arabic characters
                         if model_id:
-                            model_ids.append(model_id)
+                            persian_chars = sum(1 for c in model_id if '\u0600' <= c <= '\u06FF' or '\uFB50' <= c <= '\uFDFF')
+                            if persian_chars == 0:  # Only add if no Persian characters
+                                model_ids.append(model_id)
         
         return model_ids
     

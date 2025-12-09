@@ -702,13 +702,9 @@ def delete_model(model_id):
         model_name = model.name
         
         # Delete related model matches first to avoid foreign key constraint violation
-        matches = session.query(ModelMatch).filter(
+        matches_count = session.query(ModelMatch).filter(
             ModelMatch.ai_model_id == model_id
-        ).all()
-        
-        matches_count = len(matches)
-        for match in matches:
-            session.delete(match)
+        ).delete(synchronize_session=False)
         
         # Now delete the model
         session.delete(model)
