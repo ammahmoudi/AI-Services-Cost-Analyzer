@@ -2901,74 +2901,130 @@ def api_search_model():
         # We'll search against name, model_id, and combined text
         matched_results = []
         
+        # Extract search components for intelligent matching
+        import re
+        search_lower = name.lower()
+        
+        # Extract version numbers from search - prioritize decimals (1.1, 2.0)
+        # Match patterns: 1.1, 2.0, v1.1, etc. - prefer decimal versions
+        decimal_versions = re.findall(r'\b(\d+\.\d+)\b', name)
+        if decimal_versions:
+            search_versions = decimal_versions
+        else:
+            # Only extract single-digit versions if no decimal versions found
+            search_versions = re.findall(r'\b(\d+)\b', name)
+        
+        print(f"DEBUG: Search query: '{name}'")
+        print(f"DEBUG: Extracted search versions: {search_versions}")
+        
+        # Extract search tokens (words) for flexible matching
+        search_tokens = set(re.findall(r'\b\w+\b', search_lower))
+        # Remove version numbers from tokens to avoid double-counting
+        search_tokens = {t for t in search_tokens if not re.match(r'^\d+\.?\d*$', t)}
+        
         for data in model_search_data:
             model_name = data['name'].lower()
             model_id = data['model_id'].lower()
-            search_query = name.lower()
             
-            # Calculate multiple similarity scores
-            name_score = fuzz.partial_ratio(search_query, model_name)
-            model_id_score = fuzz.partial_ratio(search_query, model_id)
+            # Extract version numbers from model - same priority logic
+            name_decimal_versions = re.findall(r'\b(\d+\.\d+)\b', model_name)
+            model_id_decimal_versions = re.findall(r'\b(\d+\.\d+)\b', model_id)
             
-            # Token-based matching (handles word order)
-            token_sort_name = fuzz.token_sort_ratio(search_query, model_name)
-            token_sort_model_id = fuzz.token_sort_ratio(search_query, model_id)
+            # If model has decimal versions, use those; otherwise use single digits
+            if name_decimal_versions or model_id_decimal_versions:
+                all_model_versions = set(name_decimal_versions + model_id_decimal_versions)
+            else:
+                name_single_versions = re.findall(r'\b(\d+)\b', model_name)
+                model_id_single_versions = re.findall(r'\b(\d+)\b', model_id)
+                all_model_versions = set(name_single_versions + model_id_single_versions)
+            
+            # VERSION FILTERING - Critical for "Flux 1.1" vs "Flux 2" vs "FLUX.1"
+            if search_versions:
+                # If search has versions, model MUST have matching version or no version
+                search_version_set = set(search_versions)
+                if all_model_versions and not (search_version_set & all_model_versions):
+                    # Model has versions but none match - SKIP
+                    continue
+            
+            # FUZZY MATCHING - Calculate multiple similarity scores
+            # FUZZY MATCHING - Calculate multiple similarity scores
+            # Token-based matching (handles word order and structure)
+            token_sort_name = fuzz.token_sort_ratio(search_lower, model_name)
+            token_sort_model_id = fuzz.token_sort_ratio(search_lower, model_id)
+            
+            # Token set matching (handles partial matches - "Flux Pro" matches "BFL Flux Pro Ultra")
+            token_set_name = fuzz.token_set_ratio(search_lower, model_name)
+            token_set_model_id = fuzz.token_set_ratio(search_lower, model_id)
             
             # WRatio for best overall matching
-            wratio_name = fuzz.WRatio(search_query, model_name)
-            wratio_model_id = fuzz.WRatio(search_query, model_id)
+            wratio_name = fuzz.WRatio(search_lower, model_name)
+            wratio_model_id = fuzz.WRatio(search_lower, model_id)
             
-            # Exact substring bonus - heavily prioritize exact matches in name/model_id
-            exact_name_bonus = 50 if search_query in model_name else 0
-            exact_model_id_bonus = 45 if search_query in model_id else 0
+            # Partial ratio for substring matching
+            partial_name = fuzz.partial_ratio(search_lower, model_name)
+            partial_model_id = fuzz.partial_ratio(search_lower, model_id)
             
-            # Version/number matching bonus - if search has numbers, prioritize exact number matches
-            import re
-            search_numbers = re.findall(r'\d+\.?\d*', search_query)
-            name_numbers = re.findall(r'\d+\.?\d*', model_name)
-            model_id_numbers = re.findall(r'\d+\.?\d*', model_id)
+            # COMPONENT MATCHING BONUSES
+            # Check if key search tokens appear in model (company, model family, type, etc.)
+            model_tokens = set(re.findall(r'\b\w+\b', model_name)) | set(re.findall(r'\b\w+\b', model_id))
+            matching_tokens = search_tokens & model_tokens
+            token_match_ratio = len(matching_tokens) / len(search_tokens) if search_tokens else 0
+            token_bonus = token_match_ratio * 40  # Up to +40 for matching all key terms
             
-            # Bonus if version numbers match exactly
+            # Exact substring bonus
+            exact_name_bonus = 50 if search_lower in model_name else 0
+            exact_model_id_bonus = 45 if search_lower in model_id else 0
+            
+            # Version match bonus
             version_bonus = 0
-            if search_numbers:
-                for num in search_numbers:
-                    if num in name_numbers or num in model_id_numbers:
-                        version_bonus += 30  # Strong bonus for version match
-                    # Penalize if search has version but model has different version
-                    elif name_numbers or model_id_numbers:
-                        version_bonus -= 20  # Penalty for version mismatch
+            has_exact_version = False
+            if search_versions:
+                if set(search_versions) & all_model_versions:
+                    version_bonus = 80  # Strong bonus for exact version match
+                    has_exact_version = True
+                # Models without versions get neutral score (0) - not penalized
             
-            # Calculate weighted score - heavily prioritize name/model_id with exact and version bonuses
-            max_primary_score = max(name_score, model_id_score, token_sort_name, token_sort_model_id, wratio_name, wratio_model_id)
+            # Calculate maximum scores
+            max_name_score = max(token_sort_name, token_set_name, wratio_name, partial_name)
+            max_model_id_score = max(token_sort_model_id, token_set_model_id, wratio_model_id, partial_model_id)
+            max_overall_score = max(max_name_score, max_model_id_score)
+            
+            # WEIGHTED SCORING - Prioritize structure-aware matching
             weighted_score = (
+                token_set_name * 2.5 +      # Best for structured names (company + model + version)
+                token_set_model_id * 2.3 +   
                 wratio_name * 2.0 + 
-                wratio_model_id * 1.8 + 
-                name_score * 1.5 + 
-                model_id_score * 1.3 + 
-                token_sort_name * 1.2 + 
-                token_sort_model_id * 1.0 +
+                wratio_model_id * 1.8 +
+                token_sort_name * 1.5 +
+                token_sort_model_id * 1.3 +
+                partial_name * 1.2 +
+                partial_model_id * 1.0 +
                 exact_name_bonus +
                 exact_model_id_bonus +
-                version_bonus
-            ) / 9.8
+                token_bonus +               # Bonus for matching key components
+                version_bonus               # Bonus for version match
+            ) / 15.6
             
-            # Use balanced threshold with version awareness
-            # If search has version numbers, require higher match quality
-            min_threshold = 65 if search_numbers else 55
+            # Threshold - be more lenient for structured searches
+            min_threshold = 50
             
-            if max_primary_score >= 60 or weighted_score >= min_threshold:
+            if max_overall_score >= 55 or weighted_score >= min_threshold:
                 matched_results.append({
                     'model': data['model'],
                     'score': weighted_score,
-                    'max_score': max_primary_score,
-                    'has_version_match': version_bonus > 0
+                    'max_score': max_overall_score,
+                    'has_version_match': has_exact_version,
+                    'token_match_ratio': token_match_ratio
                 })
         
-        # Sort by: 1) version match first, 2) weighted score, 3) max score
-        matched_results.sort(key=lambda x: (x['has_version_match'], x['score'], x['max_score']), reverse=True)
+        # Sort by: 1) version match, 2) token match ratio, 3) weighted score, 4) max score
+        matched_results.sort(
+            key=lambda x: (x['has_version_match'], x['token_match_ratio'], x['score'], x['max_score']), 
+            reverse=True
+        )
         
-        # Extract top matches (limit to top 50 to avoid too many results)
-        models = [r['model'] for r in matched_results[:50]]
+        # Extract top matches (limit to top 20 to show most relevant results)
+        models = [r['model'] for r in matched_results[:20]]
         
         if not models:
             return jsonify({
