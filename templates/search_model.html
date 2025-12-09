@@ -9,15 +9,15 @@
     
     <!-- Search Form -->
     <div style="margin-bottom: 2rem;">
-        <div style="display: flex; gap: 1rem; align-items: end;">
+        <div style="display: flex; gap: 1rem; align-items: end; margin-bottom: 1rem;">
             <div style="flex: 1;">
                 <label for="modelNameInput" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">
-                    Model Name
+                    Model Name or Description
                 </label>
                 <input 
                     type="text" 
                     id="modelNameInput" 
-                    placeholder="e.g., gpt-4, claude, gemini, flux, stable-diffusion..."
+                    placeholder="e.g., gpt-4, flux pro, image generation model for realistic photos..."
                     style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem;"
                     onkeypress="if(event.key === 'Enter') searchModels()"
                 >
@@ -26,6 +26,22 @@
                 🔍 Search
             </button>
         </div>
+        
+        <!-- Search Mode Toggle -->
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <label style="font-weight: 500; color: #374151;">Search Mode:</label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="radio" name="searchMode" value="fuzzy" checked onchange="updateSearchPlaceholder()">
+                <span>⚡ Fast (Name Matching)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="radio" name="searchMode" value="ai" onchange="updateSearchPlaceholder()">
+                <span>🤖 AI (Semantic Search)</span>
+            </label>
+        </div>
+        <p id="searchModeHelp" style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #6b7280;">
+            Fast mode: Matches model names directly. Best for exact searches like "Flux Pro 1.1"
+        </p>
     </div>
     
     <!-- Loading State -->
@@ -84,12 +100,27 @@
 </div>
 
 <script>
+function updateSearchPlaceholder() {
+    const input = document.getElementById('modelNameInput');
+    const helpText = document.getElementById('searchModeHelp');
+    const mode = document.querySelector('input[name="searchMode"]:checked').value;
+    
+    if (mode === 'ai') {
+        input.placeholder = 'e.g., image generation model for realistic photos, fast text model under $0.001...';
+        helpText.textContent = 'AI mode: Understands natural language. Describe what you need and AI will find matching models.';
+    } else {
+        input.placeholder = 'e.g., gpt-4, flux pro, gemini, stable-diffusion...';
+        helpText.textContent = 'Fast mode: Matches model names directly. Best for exact searches like "Flux Pro 1.1"';
+    }
+}
+
 function searchModels() {
     const input = document.getElementById('modelNameInput');
     const query = input.value.trim();
+    const mode = document.querySelector('input[name="searchMode"]:checked').value;
     
     if (!query) {
-        alert('Please enter a model name to search');
+        alert('Please enter a search query');
         return;
     }
     
@@ -99,8 +130,11 @@ function searchModels() {
     document.getElementById('noResults').style.display = 'none';
     document.getElementById('errorMessage').style.display = 'none';
     
+    // Choose API endpoint based on mode
+    const endpoint = mode === 'ai' ? '/api/search-model-ai' : '/api/search-model';
+    
     // Make API request
-    fetch(`/api/search-model?name=${encodeURIComponent(query)}`)
+    fetch(`${endpoint}?name=${encodeURIComponent(query)}`)
         .then(response => response.json())
         .then(data => {
             document.getElementById('loadingState').style.display = 'none';

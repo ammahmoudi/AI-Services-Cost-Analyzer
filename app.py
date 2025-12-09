@@ -860,6 +860,92 @@ def remove_duplicate_models(source_id):
         close_session()
 
 
+@app.route('/api/parse-all-models', methods=['POST'])
+def parse_all_models():
+    """Parse all existing models to populate parsed name components"""
+    session = get_session()
+    
+    try:
+        from ai_cost_manager.model_name_parser import parse_model_name
+        
+        models = session.query(AIModel).all()
+        total = len(models)
+        
+        if total == 0:
+            return jsonify({
+                'success': True,
+                'message': 'No models to parse',
+                'total': 0,
+                'updated': 0
+            })
+        
+        updated = 0
+        errors = []
+        
+        for i, model in enumerate(models, 1):
+            try:
+                # Parse the model name
+                parsed = parse_model_name(model.name, model.model_id)
+                
+                # Update model with parsed data
+                model.parsed_company = parsed.company
+                model.parsed_model_family = parsed.model_family
+                model.parsed_version = parsed.version
+                model.parsed_size = parsed.size
+                model.parsed_variants = parsed.variants
+                model.parsed_modes = parsed.modes
+                model.parsed_tokens = list(parsed.tokens)
+                
+                updated += 1
+                
+                # Commit in batches of 100
+                if i % 100 == 0:
+                    session.commit()
+                    
+            except Exception as e:
+                errors.append(f"Model {model.id} ({model.name}): {str(e)}")
+                continue
+        
+        # Final commit
+        session.commit()
+        
+        # Get some examples
+        examples = []
+        example_models = session.query(AIModel).filter(
+            AIModel.parsed_version.isnot(None)
+        ).limit(5).all()
+        
+        for model in example_models:
+            examples.append({
+                'name': model.name,
+                'company': model.parsed_company,
+                'family': model.parsed_model_family,
+                'version': model.parsed_version,
+                'size': model.parsed_size,
+                'variants': model.parsed_variants
+            })
+        
+        return jsonify({
+            'success': True,
+            'message': f'Successfully parsed {updated}/{total} models',
+            'total': total,
+            'updated': updated,
+            'errors': errors[:10] if errors else [],
+            'error_count': len(errors),
+            'examples': examples
+        })
+    
+    except Exception as e:
+        session.rollback()
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'trace': traceback.format_exc()
+        }), 500
+    finally:
+        close_session()
+
+
 @app.route('/settings')
 def settings():
     """Settings page with tabs for LLM and extractor API keys"""
@@ -2940,10 +3026,12 @@ def api_search_model():
             
             # VERSION FILTERING - Critical for "Flux 1.1" vs "Flux 2" vs "FLUX.1"
             if search_versions:
-                # If search has versions, model MUST have matching version or no version
+                # If search has SPECIFIC version (like 1.1), ONLY show exact matches
                 search_version_set = set(search_versions)
-                if all_model_versions and not (search_version_set & all_model_versions):
-                    # Model has versions but none match - SKIP
+                
+                # Model MUST have at least one matching version
+                if not (search_version_set & all_model_versions):
+                    # No matching version - SKIP this model
                     continue
             
             # FUZZY MATCHING - Calculate multiple similarity scores
@@ -3081,6 +3169,295 @@ def api_search_model():
             'message': f'Found {len(model_list)} model(s) matching "{name}"'
         })
         
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'trace': traceback.format_exc()
+        }), 500
+    finally:
+        close_session()
+
+
+def fallback_semantic_search(query, all_models, session):
+    """Fallback semantic search when LLM is not available - uses keyword matching"""
+    from rapidfuzz import fuzz
+    
+    query_lower = query.lower()
+    query_tokens = set(query_lower.split())
+    
+    # Keywords for different model types
+    type_keywords = {
+        'image': ['image', 'photo', 'picture', 'visual', 'draw', 'generate', 'art', 'realistic', 'flux', 'stable', 'diffusion', 'midjourney', 'dalle'],
+        'text': ['text', 'chat', 'conversation', 'write', 'gpt', 'claude', 'gemini', 'llama', 'mistral', 'language'],
+        'video': ['video', 'motion', 'animate', 'clip', 'film'],
+        'audio': ['audio', 'sound', 'music', 'speech', 'voice', 'tts'],
+        'code': ['code', 'programming', 'developer', 'coder'],
+        'fast': ['fast', 'quick', 'speed', 'rapid', 'instant', 'lightning', 'turbo'],
+        'cheap': ['cheap', 'affordable', 'budget', 'low-cost', 'inexpensive'],
+        'quality': ['quality', 'best', 'high', 'premium', 'pro', 'ultra', 'max']
+    }
+    
+    matched_models = []
+    
+    for model in all_models:
+        score = 0
+        model_text = f"{model.name} {model.model_id} {model.description or ''}".lower()
+        
+        # Type matching
+        for type_name, keywords in type_keywords.items():
+            if any(kw in query_lower for kw in keywords):
+                if any(kw in model_text for kw in keywords):
+                    score += 30
+        
+        # Description matching
+        if model.description:
+            desc_score = fuzz.partial_ratio(query_lower, model.description.lower())
+            score += desc_score * 0.5
+        
+        # Name matching
+        name_score = fuzz.partial_ratio(query_lower, (model.name or '').lower())
+        score += name_score * 0.7
+        
+        # Model ID matching
+        id_score = fuzz.partial_ratio(query_lower, (model.model_id or '').lower())
+        score += id_score * 0.6
+        
+        # Token overlap
+        model_tokens = set(model_text.split())
+        overlap = query_tokens & model_tokens
+        if overlap:
+            score += len(overlap) * 15
+        
+        # Cost filtering
+        if any(word in query_lower for word in ['cheap', 'affordable', 'budget', 'free']):
+            if model.cost_per_call and model.cost_per_call < 0.01:
+                score += 40
+        
+        if score >= 40:
+            matched_models.append((model, score))
+    
+    # Sort by score
+    matched_models.sort(key=lambda x: x[1], reverse=True)
+    matched_models = [m[0] for m in matched_models[:20]]
+    
+    if not matched_models:
+        return jsonify({
+            'success': True,
+            'query': query,
+            'total_found': 0,
+            'models': [],
+            'cheapest': None,
+            'message': f'No models found matching "{query}"'
+        })
+    
+    # Build response
+    model_list = []
+    cheapest_model = None
+    cheapest_price = float('inf')
+    
+    for model in matched_models:
+        model_data = {
+            'id': model.id,
+            'name': model.name,
+            'model_id': model.model_id,
+            'provider': model.source.name if model.source else 'Unknown',
+            'provider_id': model.source.id if model.source else None,
+            'model_type': model.model_type,
+            'cost_per_call': model.cost_per_call,
+            'pricing_type': model.pricing_type,
+            'pricing_info': model.pricing_info,
+            'input_cost_per_unit': model.input_cost_per_unit,
+            'output_cost_per_unit': model.output_cost_per_unit,
+            'cost_unit': model.cost_unit,
+            'description': model.description,
+            'tags': model.tags or [],
+        }
+        model_list.append(model_data)
+        
+        # Track cheapest
+        if model_data['cost_per_call'] is not None and model_data['cost_per_call'] > 0 and model_data['cost_per_call'] < cheapest_price:
+            cheapest_price = model_data['cost_per_call']
+            cheapest_model = model_data
+    
+    # Sort by price
+    model_list.sort(key=lambda x: (
+        0 if x['cost_per_call'] is not None and x['cost_per_call'] > 0 else 1,
+        x['cost_per_call'] if x['cost_per_call'] is not None else float('inf'),
+        x['name']
+    ))
+    
+    return jsonify({
+        'success': True,
+        'query': query,
+        'total_found': len(model_list),
+        'models': model_list,
+        'cheapest': cheapest_model,
+        'message': f'Found {len(model_list)} model(s) matching "{query}"',
+        'mode': 'keyword'
+    })
+
+
+@app.route('/api/search-model-ai', methods=['GET'])
+def api_search_model_ai():
+    """AI-powered semantic search using LLM to understand natural language queries"""
+    session = get_session()
+    
+    try:
+        import json
+        import re
+        
+        query = request.args.get('name', '').strip()
+        
+        if not query:
+            return jsonify({'error': 'Search query is required'}), 400
+        
+        # Get all models
+        all_models = session.query(AIModel).all()
+        
+        if not all_models:
+            return jsonify({
+                'success': True,
+                'query': query,
+                'total_found': 0,
+                'models': [],
+                'cheapest': None,
+                'message': 'No models in database'
+            })
+        
+        try:
+            from ai_cost_manager.llm_client import get_llm_client
+            llm_client = get_llm_client()
+        except (ImportError, AttributeError):
+            # LLM client not available, use fallback
+            return fallback_semantic_search(query, all_models, session)
+        
+        if not llm_client:
+            # LLM not configured, use fallback
+            return fallback_semantic_search(query, all_models, session)
+        
+        # Prepare model data for LLM
+        models_summary = []
+        for i, model in enumerate(all_models[:200], 1):  # Limit to 200 for token limits
+            models_summary.append({
+                'index': i,
+                'name': model.name,
+                'model_id': model.model_id,
+                'type': model.model_type,
+                'description': (model.description or '')[:200],  # Truncate long descriptions
+                'provider': model.source.name if model.source else 'Unknown',
+                'cost': model.cost_per_call
+            })
+        
+        # Create LLM prompt
+        prompt = f"""You are an AI model search assistant. A user is searching for: "{query}"
+
+Your task is to analyze this list of AI models and return the indices (numbers) of models that best match the user's query.
+Consider:
+- Model name and ID
+- Model type (e.g., image-generation, text-generation)
+- Description and capabilities
+- Provider
+- Cost (if user mentions budget)
+
+User's query: "{query}"
+
+Available models:
+{chr(10).join([f"{m['index']}. {m['name']} ({m['model_id']}) - {m['type']} - {m['provider']} - ${m['cost'] if m['cost'] else 'N/A'}/call - {m['description'][:100]}" for m in models_summary[:50]])}
+
+Return ONLY a JSON array of the top 20 matching model indices, ordered by relevance. Example: [5, 12, 3, 18, 7, ...]
+
+Important: Return ONLY the JSON array, no other text."""
+
+        response = ""
+        try:
+            # Call LLM
+            response = llm_client.generate(prompt, max_tokens=200)
+            
+            # Parse LLM response
+            # Extract JSON array from response
+            json_match = re.search(r'\[[\d,\s]+\]', response)
+            if json_match:
+                indices = json.loads(json_match.group(0))
+            else:
+                # Fallback: try to parse the whole response
+                indices = json.loads(response)
+            
+            # Get matching models
+            matched_models = []
+            for idx in indices[:20]:  # Top 20
+                if 1 <= idx <= len(models_summary):
+                    model = all_models[idx - 1]
+                    matched_models.append(model)
+            
+            if not matched_models:
+                return jsonify({
+                    'success': True,
+                    'query': query,
+                    'total_found': 0,
+                    'models': [],
+                    'cheapest': None,
+                    'message': f'AI couldn\'t find matching models for "{query}"'
+                })
+            
+            # Build response
+            model_list = []
+            cheapest_model = None
+            cheapest_price = float('inf')
+            
+            for model in matched_models:
+                model_data = {
+                    'id': model.id,
+                    'name': model.name,
+                    'model_id': model.model_id,
+                    'provider': model.source.name if model.source else 'Unknown',
+                    'provider_id': model.source.id if model.source else None,
+                    'model_type': model.model_type,
+                    'cost_per_call': model.cost_per_call,
+                    'pricing_type': model.pricing_type,
+                    'pricing_info': model.pricing_info,
+                    'input_cost_per_unit': model.input_cost_per_unit,
+                    'output_cost_per_unit': model.output_cost_per_unit,
+                    'cost_unit': model.cost_unit,
+                    'description': model.description,
+                    'tags': model.tags or [],
+                }
+                model_list.append(model_data)
+                
+                # Track cheapest
+                if model_data['cost_per_call'] is not None and model_data['cost_per_call'] > 0 and model_data['cost_per_call'] < cheapest_price:
+                    cheapest_price = model_data['cost_per_call']
+                    cheapest_model = model_data
+            
+            # Sort by price
+            model_list.sort(key=lambda x: (
+                0 if x['cost_per_call'] is not None and x['cost_per_call'] > 0 else 1,
+                x['cost_per_call'] if x['cost_per_call'] is not None else float('inf'),
+                x['name']
+            ))
+            
+            return jsonify({
+                'success': True,
+                'query': query,
+                'total_found': len(model_list),
+                'models': model_list,
+                'cheapest': cheapest_model,
+                'message': f'AI found {len(model_list)} model(s) matching "{query}"',
+                'mode': 'ai'
+            })
+            
+        except json.JSONDecodeError as e:
+            return jsonify({
+                'error': f'AI response parsing error: {str(e)}. Response: {response[:200]}',
+                'success': False
+            }), 500
+            
+        except Exception as e:
+            return jsonify({
+                'error': f'LLM error: {str(e)}',
+                'success': False
+            }), 500
+    
     except Exception as e:
         import traceback
         return jsonify({

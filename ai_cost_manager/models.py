@@ -113,6 +113,15 @@ class AIModel(Base):
     tags = Column(JSON, default=list)
     category = Column(String(100), nullable=True)  # Specific type (e.g., 'text-to-image', 'image-to-video') - NOT validated
     
+    # Parsed name components (for better searching and matching)
+    parsed_company = Column(String(100), nullable=True)  # e.g., 'Meta', 'OpenAI', 'BFL'
+    parsed_model_family = Column(String(100), nullable=True)  # e.g., 'Llama', 'GPT', 'Flux'
+    parsed_version = Column(String(50), nullable=True)  # e.g., '3.1', '4', '1.1'
+    parsed_size = Column(String(50), nullable=True)  # e.g., '8B', '70B', 'Large'
+    parsed_variants = Column(JSON, default=list)  # e.g., ['Instruct', 'Chat']
+    parsed_modes = Column(JSON, default=list)  # e.g., ['Fill', 'Redux']
+    parsed_tokens = Column(JSON, default=list)  # All significant tokens for search
+    
     # Schema information
     input_schema = Column(JSON, nullable=True)
     output_schema = Column(JSON, nullable=True)

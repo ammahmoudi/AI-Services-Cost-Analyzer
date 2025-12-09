@@ -115,6 +115,7 @@
     <div class="tabs">
         <button class="tab active" data-tab="llm">LLM Configuration</button>
         <button class="tab" data-tab="extractors">Extractor API Keys</button>
+        <button class="tab" data-tab="maintenance">Maintenance</button>
     </div>
     
     <!-- LLM Configuration Tab -->
@@ -315,6 +316,23 @@
             <button type="submit" class="btn btn-success">Save All Extractor Settings</button>
         </form>
     </div>
+    
+    <!-- Maintenance Tab -->
+    <div class="tab-content" id="maintenance-tab">
+        <h3 class="section-title">Database Maintenance</h3>
+        
+        <div class="card">
+            <h4 style="margin-top: 0;">Parse Model Names</h4>
+            <p class="help-text" style="margin-bottom: 1rem;">
+                Extract structured components (company, version, size, etc.) from all model names.
+                This improves search accuracy and enables version-aware filtering.
+            </p>
+            <button type="button" class="btn btn-primary" onclick="parseAllModels()">
+                🔄 Parse All Models
+            </button>
+            <div id="parse-result" style="margin-top: 1rem;"></div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -348,6 +366,85 @@
         } else {
             input.type = 'password';
             button.textContent = 'Show';
+        }
+    }
+    
+    // Parse all models
+    async function parseAllModels() {
+        const button = event.target;
+        const resultDiv = document.getElementById('parse-result');
+        
+        button.disabled = true;
+        button.textContent = '⏳ Parsing...';
+        resultDiv.innerHTML = '<div class="alert alert-info">Parsing models, please wait...</div>';
+        
+        try {
+            const response = await fetch('/api/parse-all-models', {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                let html = `
+                    <div class="alert alert-success">
+                        <strong>✓ Success!</strong> ${data.message}
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <p><strong>Statistics:</strong></p>
+                        <ul>
+                            <li>Total models: ${data.total}</li>
+                            <li>Updated: ${data.updated}</li>
+                            ${data.error_count > 0 ? `<li>Errors: ${data.error_count}</li>` : ''}
+                        </ul>
+                `;
+                
+                if (data.examples && data.examples.length > 0) {
+                    html += `
+                        <p style="margin-top: 1rem;"><strong>Examples:</strong></p>
+                        <table class="table" style="font-size: 0.9rem;">
+                            <tr>
+                                <th>Model Name</th>
+                                <th>Company</th>
+                                <th>Family</th>
+                                <th>Version</th>
+                                <th>Size</th>
+                            </tr>
+                    `;
+                    
+                    data.examples.forEach(ex => {
+                        html += `
+                            <tr>
+                                <td>${ex.name}</td>
+                                <td>${ex.company || '-'}</td>
+                                <td>${ex.family || '-'}</td>
+                                <td>${ex.version || '-'}</td>
+                                <td>${ex.size || '-'}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</table>';
+                }
+                
+                html += '</div>';
+                resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>✗ Error:</strong> ${data.error}
+                    </div>
+                `;
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <strong>✗ Error:</strong> ${error.message}
+                </div>
+            `;
+        } finally {
+            button.disabled = false;
+            button.textContent = '🔄 Parse All Models';
         }
     }
 </script>
