@@ -683,6 +683,8 @@ def model_detail(model_id):
 @app.route('/models/<int:model_id>/delete', methods=['POST'])
 def delete_model(model_id):
     """Delete a single model"""
+    from ai_cost_manager.models import ModelMatch
+    
     session = get_session()
     
     try:
@@ -692,10 +694,25 @@ def delete_model(model_id):
             return redirect(url_for('models'))
         
         model_name = model.name
+        
+        # Delete related model matches first to avoid foreign key constraint violation
+        matches = session.query(ModelMatch).filter(
+            ModelMatch.ai_model_id == model_id
+        ).all()
+        
+        matches_count = len(matches)
+        for match in matches:
+            session.delete(match)
+        
+        # Now delete the model
         session.delete(model)
         session.commit()
         
-        flash(f'Model "{model_name}" deleted successfully!', 'success')
+        if matches_count > 0:
+            flash(f'Model "{model_name}" and {matches_count} related match(es) deleted successfully!', 'success')
+        else:
+            flash(f'Model "{model_name}" deleted successfully!', 'success')
+        
         return redirect(url_for('models'))
         
     except Exception as e:
