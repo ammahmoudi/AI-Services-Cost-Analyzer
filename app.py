@@ -633,11 +633,16 @@ def canonical_model_detail(canonical_id):
 def model_detail(model_id):
     """Show detailed information about a model"""
     from ai_cost_manager.model_matching_service import ModelMatchingService
+    from sqlalchemy.orm import joinedload
     
     session = get_session()
     
     try:
-        model = session.query(AIModel).filter_by(id=model_id).first()
+        # Eagerly load the source relationship to avoid detached instance errors
+        model = session.query(AIModel).options(
+            joinedload(AIModel.source)
+        ).filter_by(id=model_id).first()
+        
         if not model:
             flash('Model not found!', 'error')
             return redirect(url_for('models'))
@@ -646,11 +651,33 @@ def model_detail(model_id):
         service = ModelMatchingService(session)
         alternatives_data = service.get_model_with_alternatives(model_id)
         
+        # Extract data we need before session closes
+        model_data = {
+            'id': model.id,
+            'name': model.name,
+            'model_id': model.model_id,
+            'model_type': model.model_type,
+            'cost_per_call': model.cost_per_call,
+            'credits_required': model.credits_required,
+            'description': model.description,
+            'pricing_info': model.pricing_info,
+            'pricing_type': model.pricing_type,
+            'cost_unit': model.cost_unit,
+            'pricing_formula': model.pricing_formula,
+            'input_cost_per_unit': model.input_cost_per_unit,
+            'output_cost_per_unit': model.output_cost_per_unit,
+            'pricing_variables': model.pricing_variables,
+            'tags': model.tags or [],
+            'source_name': model.source.name if model.source else 'Unknown Provider',
+            'source_id': model.source.id if model.source else None,
+        }
+        
         return render_template('model_detail.html', 
-                             model=model,
+                             model=model_data,
                              alternatives_data=alternatives_data)
     finally:
         close_session()
+
 
 
 @app.route('/models/<int:model_id>/delete', methods=['POST'])
