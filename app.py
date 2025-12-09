@@ -2916,13 +2916,13 @@ def api_search_model():
             
             # Calculate weighted score - prioritize name and model_id over description
             # Higher weight for exact name/model_id matches
-            max_primary_score = max(name_score, model_id_score, token_sort_name, token_sort_model_id)
+            max_primary_score = max(name_score, model_id_score, token_sort_name, token_sort_model_id, wratio_name, wratio_model_id)
             weighted_score = (wratio_name * 2.0 + wratio_model_id * 1.8 + name_score * 1.5 + 
                             model_id_score * 1.3 + token_sort_name * 1.2 + token_sort_model_id * 1.0) / 9.8
             
-            # Use a stricter threshold to filter out poor matches
-            # Must have high score in primary fields (name or model_id)
-            if max_primary_score >= 70 and weighted_score >= 65:  # Stricter threshold
+            # Use a balanced threshold - not too strict, not too loose
+            # "flux pro 1.1" should match "flux-1.1-pro" (token_sort will score high)
+            if max_primary_score >= 60 or weighted_score >= 55:  # More lenient threshold
                 matched_results.append({
                     'model': data['model'],
                     'score': weighted_score,
@@ -2932,8 +2932,8 @@ def api_search_model():
         # Sort by weighted score descending
         matched_results.sort(key=lambda x: (x['score'], x['max_score']), reverse=True)
         
-        # Extract top matches
-        models = [r['model'] for r in matched_results]
+        # Extract top matches (limit to top 50 to avoid too many results)
+        models = [r['model'] for r in matched_results[:50]]
         
         if not models:
             return jsonify({
