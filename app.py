@@ -7,6 +7,7 @@ import os
 import json
 import time
 import traceback
+from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from dotenv import load_dotenv
 from ai_cost_manager.database import get_session, close_session, init_db
@@ -3496,4 +3497,18 @@ Important: Return ONLY the JSON array, no other text."""
 
 
 if __name__ == '__main__':
+    # Run migration 011 if needed
+    try:
+        import importlib.util
+        migration_path = Path(__file__).parent / 'migrations' / '011_add_llm_purpose.py'
+        if migration_path.exists():
+            spec = importlib.util.spec_from_file_location("migration_011", migration_path)
+            if spec and spec.loader:
+                migration = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(migration)
+                if hasattr(migration, 'run_migration'):
+                    migration.run_migration()
+    except Exception as e:
+        print(f"Startup migration check: {e}")
+    
     app.run(debug=True, host='0.0.0.0', port=5000)
