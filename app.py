@@ -670,6 +670,12 @@ def model_detail(model_id):
             'tags': model.tags or [],
             'source_name': model.source.name if model.source else 'Unknown Provider',
             'source_id': model.source.id if model.source else None,
+            'category': model.category,
+            'created_at': model.created_at,
+            'updated_at': model.updated_at,
+            'raw_metadata': model.raw_metadata,
+            'llm_extracted': model.llm_extracted,
+            'thumbnail_url': model.thumbnail_url,
         }
         
         return render_template('model_detail.html', 

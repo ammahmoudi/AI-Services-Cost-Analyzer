@@ -224,16 +224,16 @@
         <h3 style="margin-bottom: 0.5rem;">Metadata</h3>
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
             <div>
-                <strong>Source:</strong> {{ model.source.name }}
+                <strong>Source:</strong> {{ model.source_name }}
             </div>
             <div>
                 <strong>Category:</strong> {{ model.category if model.category else 'N/A' }}
             </div>
             <div>
-                <strong>Created:</strong> {{ model.created_at.strftime('%Y-%m-%d %H:%M') }}
+                <strong>Created:</strong> {{ model.created_at.strftime('%Y-%m-%d %H:%M') if model.created_at else 'N/A' }}
             </div>
             <div>
-                <strong>Updated:</strong> {{ model.updated_at.strftime('%Y-%m-%d %H:%M') }}
+                <strong>Updated:</strong> {{ model.updated_at.strftime('%Y-%m-%d %H:%M') if model.updated_at else 'N/A' }}
             </div>
         </div>
     </div>
