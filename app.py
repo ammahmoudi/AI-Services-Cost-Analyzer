@@ -2892,15 +2892,32 @@ def api_search_model():
             model_id_normalized = normalize_text(model.model_id)
             search_lower = name.lower()
             
+            # Split search into words for better matching
+            search_words = [w.strip() for w in search_lower.split() if w.strip()]
+            search_words_normalized = [normalize_text(w) for w in search_words]
+            
             # Match if any of these conditions are true:
             # 1. Direct substring match in name
             # 2. Direct substring match in model_id
             # 3. Normalized substring match in name
             # 4. Normalized substring match in model_id
+            # 5. All search words appear in name (in any order)
+            # 6. All search words appear in model_id (in any order)
+            
+            # Check if all words from search appear in the model name/id
+            all_words_in_name = all(word in name_lower for word in search_words)
+            all_words_in_model_id = all(word in model_id_lower for word in search_words)
+            all_words_normalized_in_name = all(word in name_normalized for word in search_words_normalized)
+            all_words_normalized_in_model_id = all(word in model_id_normalized for word in search_words_normalized)
+            
             if (search_lower in name_lower or 
                 search_lower in model_id_lower or
                 search_normalized in name_normalized or
-                search_normalized in model_id_normalized):
+                search_normalized in model_id_normalized or
+                all_words_in_name or
+                all_words_in_model_id or
+                all_words_normalized_in_name or
+                all_words_normalized_in_model_id):
                 matched_models.append(model)
         
         models = matched_models
