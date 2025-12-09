@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div style="margin-bottom: 2rem;">
+        <h2 style="margin: 0 0 0.5rem 0;">🔍 Search Models by Name</h2>
+        <p style="color: #6b7280; margin: 0;">Find models across all providers and compare prices</p>
+    </div>
+    
+    <!-- Search Form -->
+    <div style="margin-bottom: 2rem;">
+        <div style="display: flex; gap: 1rem; align-items: end;">
+            <div style="flex: 1;">
+                <label for="modelNameInput" style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">
+                    Model Name
+                </label>
+                <input 
+                    type="text" 
+                    id="modelNameInput" 
+                    placeholder="e.g., gpt-4, claude, gemini, flux, stable-diffusion..."
+                    style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem;"
+                    onkeypress="if(event.key === 'Enter') searchModels()"
+                >
+            </div>
+            <button onclick="searchModels()" class="btn" style="padding: 0.75rem 2rem; background: #3b82f6;">
+                🔍 Search
+            </button>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div id="loadingState" style="display: none; text-align: center; padding: 3rem; color: #6b7280;">
+        <div style="font-size: 2rem; margin-bottom: 1rem;">⏳</div>
+        <p>Searching models...</p>
+    </div>
+    
+    <!-- Results Container -->
+    <div id="resultsContainer" style="display: none;">
+        <!-- Cheapest Model Card -->
+        <div id="cheapestCard" style="display: none; margin-bottom: 2rem; padding: 1.5rem; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 12px; color: white; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+                <div style="font-size: 2.5rem;">🏆</div>
+                <div>
+                    <h3 style="margin: 0 0 0.25rem 0; font-size: 1.25rem;">Best Price</h3>
+                    <p style="margin: 0; opacity: 0.9; font-size: 0.9rem;">Cheapest option available</p>
+                </div>
+            </div>
+            
+            <div id="cheapestModelContent"></div>
+        </div>
+        
+        <!-- Summary Stats -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+            <div style="padding: 1.5rem; background: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+                <div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.5rem;">Total Found</div>
+                <div id="totalFound" style="font-size: 2rem; font-weight: bold; color: #111827;">0</div>
+            </div>
+            <div style="padding: 1.5rem; background: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;">
+                <div style="font-size: 0.875rem; color: #166534; margin-bottom: 0.5rem;">Cheapest Price</div>
+                <div id="cheapestPrice" style="font-size: 2rem; font-weight: bold; color: #166534;">-</div>
+            </div>
+            <div style="padding: 1.5rem; background: #fef3c7; border-radius: 8px; border: 1px solid #fde68a;">
+                <div style="font-size: 0.875rem; color: #92400e; margin-bottom: 0.5rem;">Providers</div>
+                <div id="providerCount" style="font-size: 2rem; font-weight: bold; color: #92400e;">0</div>
+            </div>
+        </div>
+        
+        <!-- All Models List -->
+        <div>
+            <h3 style="margin-bottom: 1rem;">All Matching Models</h3>
+            <div id="modelsList"></div>
+        </div>
+    </div>
+    
+    <!-- No Results Message -->
+    <div id="noResults" style="display: none; text-align: center; padding: 3rem; color: #6b7280;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">🔍</div>
+        <h3 style="margin: 0 0 0.5rem 0; color: #374151;">No models found</h3>
+        <p style="margin: 0;">Try a different search term</p>
+    </div>
+    
+    <!-- Error Message -->
+    <div id="errorMessage" style="display: none; padding: 1rem; background: #fee2e2; border-radius: 8px; color: #991b1b; margin-top: 1rem;"></div>
+</div>
+
+<script>
+function searchModels() {
+    const input = document.getElementById('modelNameInput');
+    const query = input.value.trim();
+    
+    if (!query) {
+        alert('Please enter a model name to search');
+        return;
+    }
+    
+    // Show loading state
+    document.getElementById('loadingState').style.display = 'block';
+    document.getElementById('resultsContainer').style.display = 'none';
+    document.getElementById('noResults').style.display = 'none';
+    document.getElementById('errorMessage').style.display = 'none';
+    
+    // Make API request
+    fetch(`/api/search-model?name=${encodeURIComponent(query)}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('loadingState').style.display = 'none';
+            
+            if (data.error) {
+                document.getElementById('errorMessage').textContent = data.error;
+                document.getElementById('errorMessage').style.display = 'block';
+                return;
+            }
+            
+            if (data.total_found === 0) {
+                document.getElementById('noResults').style.display = 'block';
+                return;
+            }
+            
+            // Display results
+            displayResults(data);
+        })
+        .catch(error => {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('errorMessage').textContent = 'Error: ' + error.message;
+            document.getElementById('errorMessage').style.display = 'block';
+        });
+}
+
+function displayResults(data) {
+    document.getElementById('resultsContainer').style.display = 'block';
+    
+    // Update stats
+    document.getElementById('totalFound').textContent = data.total_found;
+    
+    // Get unique providers
+    const providers = new Set(data.models.map(m => m.provider));
+    document.getElementById('providerCount').textContent = providers.size;
+    
+    // Display cheapest model
+    if (data.cheapest) {
+        document.getElementById('cheapestCard').style.display = 'block';
+        const cheapestContent = document.getElementById('cheapestModelContent');
+        const cheapest = data.cheapest;
+        
+        document.getElementById('cheapestPrice').textContent = 
+            cheapest.cost_per_call ? `$${cheapest.cost_per_call.toFixed(6)}` : 'N/A';
+        
+        cheapestContent.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1.5rem;">${cheapest.name}</h4>
+                    <p style="margin: 0; opacity: 0.9;">
+                        <span class="badge" style="background: rgba(255,255,255,0.2); color: white;">${cheapest.model_type}</span>
+                        <span style="margin-left: 0.5rem;">${cheapest.provider}</span>
+                    </p>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 2rem; font-weight: bold;">$${cheapest.cost_per_call ? cheapest.cost_per_call.toFixed(6) : 'N/A'}</div>
+                    <div style="opacity: 0.9; font-size: 0.85rem;">per call</div>
+                </div>
+            </div>
+            ${cheapest.description ? `<p style="margin: 0 0 1rem 0; opacity: 0.95; line-height: 1.6;">${cheapest.description}</p>` : ''}
+            <div style="display: flex; gap: 0.5rem;">
+                <a href="/models/${cheapest.id}" class="btn" style="background: white; color: #10b981;">View Details</a>
+            </div>
+        `;
+    } else {
+        document.getElementById('cheapestCard').style.display = 'none';
+        document.getElementById('cheapestPrice').textContent = 'N/A';
+    }
+    
+    // Display all models
+    const modelsList = document.getElementById('modelsList');
+    let modelsHtml = '';
+    
+    data.models.forEach((model, index) => {
+        const isCheapest = data.cheapest && model.id === data.cheapest.id;
+        const borderColor = isCheapest ? '#10b981' : '#e5e7eb';
+        const bgColor = isCheapest ? '#f0fdf4' : '#ffffff';
+        
+        modelsHtml += `
+            <div style="border: 2px solid ${borderColor}; background: ${bgColor}; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; position: relative;">
+                ${isCheapest ? '<div style="position: absolute; top: -12px; right: 20px; background: #10b981; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.85rem; font-weight: 600;">✓ Best Price</div>' : ''}
+                
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <div style="flex: 1;">
+                        <h4 style="margin: 0 0 0.5rem 0; color: #1f2937;">${model.name}</h4>
+                        <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                            <span class="badge badge-blue">${model.model_type}</span>
+                            <span style="color: #6b7280; font-size: 0.9rem;">${model.provider}</span>
+                        </div>
+                        ${model.description ? `<p style="color: #4b5563; font-size: 0.9rem; margin: 0.5rem 0 0 0;">${model.description}</p>` : ''}
+                    </div>
+                    <div style="text-align: right; margin-left: 2rem;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: ${isCheapest ? '#10b981' : '#2563eb'};">
+                            ${model.cost_per_call ? `$${model.cost_per_call.toFixed(6)}` : 'N/A'}
+                        </div>
+                        <div style="color: #6b7280; font-size: 0.85rem;">per call</div>
+                    </div>
+                </div>
+                
+                ${model.pricing_info ? `<p style="color: #6b7280; font-size: 0.85rem; margin: 0.5rem 0;">${model.pricing_info}</p>` : ''}
+                
+                <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+                    <a href="/models/${model.id}" class="btn-sm" style="background: #3b82f6;">View Details</a>
+                </div>
+            </div>
+        `;
+    });
+    
+    modelsList.innerHTML = modelsHtml;
+}
+
+// Focus input on page load
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('modelNameInput').focus();
+});
+</script>
+{% endblock %}

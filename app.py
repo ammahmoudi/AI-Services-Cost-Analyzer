@@ -2853,5 +2853,88 @@ def api_remove_model_from_canonical(canonical_id, ai_model_id):
         close_session()
 
 
+@app.route('/search-model')
+def search_model_page():
+    """Page for searching models by name"""
+    return render_template('search_model.html')
+
+
+@app.route('/api/search-model', methods=['GET'])
+def api_search_model():
+    """Search for models by name and return all matches with cheapest option"""
+    session = get_session()
+    
+    try:
+        name = request.args.get('name', '').strip()
+        
+        if not name:
+            return jsonify({'error': 'Model name is required'}), 400
+        
+        # Search for models matching the name (case-insensitive, partial match)
+        models = session.query(AIModel).filter(
+            AIModel.name.ilike(f'%{name}%')
+        ).all()
+        
+        if not models:
+            return jsonify({
+                'success': True,
+                'query': name,
+                'total_found': 0,
+                'models': [],
+                'cheapest': None,
+                'message': f'No models found matching "{name}"'
+            })
+        
+        # Build response with model details
+        model_list = []
+        cheapest_model = None
+        cheapest_price = float('inf')
+        
+        for model in models:
+            model_data = {
+                'id': model.id,
+                'name': model.name,
+                'model_id': model.model_id,
+                'provider': model.source.name if model.source else 'Unknown',
+                'provider_id': model.source.id if model.source else None,
+                'model_type': model.model_type,
+                'cost_per_call': model.cost_per_call,
+                'pricing_type': model.pricing_type,
+                'pricing_info': model.pricing_info,
+                'input_cost_per_unit': model.input_cost_per_unit,
+                'output_cost_per_unit': model.output_cost_per_unit,
+                'cost_unit': model.cost_unit,
+                'description': model.description,
+                'tags': model.tags or [],
+            }
+            model_list.append(model_data)
+            
+            # Track cheapest model (use the data dict value, not the SQLAlchemy column)
+            if model_data['cost_per_call'] is not None and model_data['cost_per_call'] < cheapest_price:
+                cheapest_price = model_data['cost_per_call']
+                cheapest_model = model_data
+        
+        # Sort by price (cheapest first, then by name)
+        model_list.sort(key=lambda x: (x['cost_per_call'] if x['cost_per_call'] is not None else float('inf'), x['name']))
+        
+        return jsonify({
+            'success': True,
+            'query': name,
+            'total_found': len(model_list),
+            'models': model_list,
+            'cheapest': cheapest_model,
+            'message': f'Found {len(model_list)} model(s) matching "{name}"'
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'trace': traceback.format_exc()
+        }), 500
+    finally:
+        close_session()
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
