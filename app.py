@@ -1901,14 +1901,32 @@ def match_models():
     
     session = get_session()
     try:
-        force_refresh = request.json.get('force_refresh', False) if request.is_json else False
+        data = request.json if request.is_json else {}
+        force_refresh = data.get('force_refresh', False)
+        model_type = data.get('model_type')  # Optional: filter by model type
+        check_only = data.get('check_only', False)  # Only check status, don't match
         
         service = ModelMatchingService(session)
-        result = service.match_all_models(force_refresh=force_refresh)
+        
+        # If check_only, just return the status
+        if check_only:
+            from ai_cost_manager.models import ModelMatch
+            existing_matches = session.query(ModelMatch).count()
+            if existing_matches > 0:
+                return jsonify({
+                    'status': 'already_matched',
+                    'existing_matches': existing_matches
+                })
+            return jsonify({'status': 'no_matches'})
+        
+        result = service.match_all_models(force_refresh=force_refresh, model_type=model_type)
         
         return jsonify(result)
     
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error in match_models: {error_trace}")
         return jsonify({'error': str(e)}), 500
     finally:
         close_session()

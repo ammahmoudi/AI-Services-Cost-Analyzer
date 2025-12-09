@@ -157,23 +157,44 @@ class ModelMatcher:
                 for batch_idx in range(num_batches):
                     start_idx = batch_idx * BATCH_SIZE
                     end_idx = min((batch_idx + 1) * BATCH_SIZE, len(model_summaries))
-                    batch = model_summaries[start_idx:end_idx]
+                    batch_models = model_summaries[start_idx:end_idx]
+                    
+                    # Reset indices to 0-based for this batch
+                    batch = []
+                    for i, model_summary in enumerate(batch_models):
+                        batch_summary = model_summary.copy()
+                        batch_summary['index'] = i  # Reset to 0-based index
+                        batch_summary['original_index'] = start_idx + i  # Keep track of original
+                        batch.append(batch_summary)
                     
                     print(f"  📦 Batch {batch_idx + 1}/{num_batches}: models {start_idx}-{end_idx-1}")
                     
                     try:
                         batch_matches = self._llm_match_request_unified(model_type, batch)
                         
-                        # Adjust indices to account for batch offset
+                        # Validate and adjust indices to account for batch offset
+                        valid_batch_matches = []
+                        batch_size = len(batch)
+                        
                         for match_group in batch_matches:
                             if isinstance(match_group, dict) and 'indices' in match_group:
                                 original_indices = match_group['indices']
                                 if isinstance(original_indices, list):
-                                    match_group['indices'] = [idx + start_idx for idx in original_indices]
+                                    # Filter out invalid indices (outside the current batch range)
+                                    valid_original = [idx for idx in original_indices 
+                                                     if isinstance(idx, int) and 0 <= idx < batch_size]
+                                    
+                                    if len(valid_original) >= 2:  # Need at least 2 models to match
+                                        # Adjust to global indices
+                                        match_group['indices'] = [idx + start_idx for idx in valid_original]
+                                        valid_batch_matches.append(match_group)
+                                    elif len(valid_original) > 0 and len(valid_original) < len(original_indices):
+                                        # Some indices were invalid
+                                        print(f"    ⚠️  Skipping match with insufficient valid indices: {match_group.get('canonical_name', 'unknown')} (found {len(valid_original)} valid out of {len(original_indices)})")
                         
-                        if batch_matches:
-                            print(f"    ✅ Found {len(batch_matches)} groups in this batch")
-                        all_batch_matches.extend(batch_matches)
+                        if valid_batch_matches:
+                            print(f"    ✅ Found {len(valid_batch_matches)} valid groups in this batch")
+                        all_batch_matches.extend(valid_batch_matches)
                     except Exception as e:
                         print(f"    ⚠️  Batch failed: {e}")
                         continue
@@ -291,13 +312,14 @@ OUTPUT FORMAT:
 Return a JSON array of match groups. Each group represents models that are identical.
 If NO matches found, return empty array: []
 
-[{{"canonical_name": "flux-1-1-pro", "indices": [0, 3, 7], "confidence": 0.95, "reasoning": "All three are Flux 1.1 Pro with formatting variations"}}]
+Example: [{{"canonical_name": "flux-1-1-pro", "indices": [0, 3, 7], "confidence": 0.95, "reasoning": "All three are Flux 1.1 Pro with formatting variations"}}]
 
 REQUIREMENTS:
 - Only group if at least 2 models match
-- Use confidence 0.95 for exact matches, 0.90-0.94 for likely matches
+- Use confidence 0.95 for exact matches, 0.90-0.94 for likely matches  
 - canonical_name should be a clean, standardized version of the model name
 - Include clear reasoning for each match
+- Use the 'index' field from each model object above (NOT the array position)
 
 Analyze the models above and identify ALL matching groups:
 """

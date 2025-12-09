@@ -6,7 +6,7 @@ Handles matching models across providers and finding alternatives
 
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, text
 from ai_cost_manager.models import AIModel, CanonicalModel, ModelMatch, APISource
 from ai_cost_manager.model_matcher import ModelMatcher
 from ai_cost_manager.model_types import VALID_MODEL_TYPES
@@ -20,12 +20,13 @@ class ModelMatchingService:
         self.session = session
         self.matcher = ModelMatcher()
     
-    def match_all_models(self, force_refresh: bool = False) -> Dict[str, any]:
+    def match_all_models(self, force_refresh: bool = False, model_type: Optional[str] = None) -> Dict[str, any]:
         """
         Match all models in the database across providers
         
         Args:
             force_refresh: If True, re-match even if matches exist
+            model_type: Optional filter to match only specific model type
             
         Returns:
             Summary of matching results
@@ -39,13 +40,17 @@ class ModelMatchingService:
                 'message': 'Models already matched. Use force_refresh=True to re-match.'
             }
         
-        # Get all active models
-        models = self.session.query(AIModel).filter(AIModel.is_active == True).all()
+        # Get all active models, optionally filtered by type
+        query = self.session.query(AIModel).filter(AIModel.is_active == True)
+        if model_type:
+            query = query.filter(AIModel.model_type == model_type)
+        
+        models = query.all()
         
         if not models:
             return {
                 'status': 'no_models',
-                'message': 'No models found to match'
+                'message': f'No models found{f" for type {model_type}" if model_type else ""}'
             }
         
         # Convert to dictionaries
@@ -69,61 +74,163 @@ class ModelMatchingService:
         
         # Clear existing matches if force refresh
         if force_refresh:
-            self.session.query(ModelMatch).delete()
-            self.session.query(CanonicalModel).delete()
-            self.session.commit()
+            print("🧹 Clearing existing matches...")
+            # Refresh connection before large delete operations
+            try:
+                self.session.execute(text("SELECT 1"))
+            except Exception as e:
+                print(f"  ⚠️  Connection lost before cleanup, reconnecting: {e}")
+                self.session.rollback()
+                from ai_cost_manager.database import engine
+                engine.dispose()
+                self.session.execute(text("SELECT 1"))
+            
+            # Delete in smaller batches to avoid timeouts
+            try:
+                deleted_matches = self.session.query(ModelMatch).delete()
+                print(f"  🗑️  Deleted {deleted_matches} existing matches")
+                self.session.commit()
+                
+                deleted_canonical = self.session.query(CanonicalModel).delete()
+                print(f"  🗑️  Deleted {deleted_canonical} existing canonical models")
+                self.session.commit()
+            except Exception as e:
+                print(f"  ⚠️  Cleanup failed, reconnecting: {e}")
+                self.session.rollback()
+                from ai_cost_manager.database import engine
+                engine.dispose()
+                # Try again after reconnection
+                self.session.execute(text("SELECT 1"))
+                self.session.query(ModelMatch).delete()
+                self.session.commit()
+                self.session.query(CanonicalModel).delete()
+                self.session.commit()
         
         # Save matches to database
         created_canonical = 0
         created_matches = 0
         
+        # Refresh connection before database writes to prevent timeout
+        try:
+            # Test connection with a simple scalar query
+            from sqlalchemy import text
+            self.session.execute(text('SELECT 1')).scalar()
+        except Exception as e:
+            print(f"⚠️  Database connection stale, refreshing: {e}")
+            self.session.rollback()
+            from ai_cost_manager.database import engine
+            engine.dispose()
+        
+        # Process matches in two passes to avoid timeouts
+        # Pass 1: Create all canonical models first
+        canonical_map = {}  # Map canonical_name to canonical_id
+        
+        print(f"📊 Creating canonical models...")
+        canonical_objects = []
         for match in matches:
-            # Create or get canonical model
-            canonical = self.session.query(CanonicalModel).filter(
-                CanonicalModel.canonical_name == match.canonical_name
-            ).first()
-            
-            if not canonical:
-                # Get representative model for description
-                best_model = match.get_best_price()
-                if not best_model:
-                    best_model = match.models[0]
-                
-                # Validate and use model_type from VALID_MODEL_TYPES
-                model_type = best_model.get('model_type')
-                if model_type not in VALID_MODEL_TYPES:
-                    print(f"⚠️  Invalid model_type '{model_type}' for canonical model, defaulting to 'other'")
-                    model_type = 'other'
-                
-                canonical = CanonicalModel(
-                    canonical_name=match.canonical_name,
-                    display_name=match.canonical_name.replace('-', ' ').title(),
-                    description=best_model.get('description', ''),
-                    model_type=model_type,
-                    tags=list(set([tag for m in match.models for tag in (m.get('tags') or [])]))
-                )
-                self.session.add(canonical)
-                self.session.flush()  # Get the ID
-                created_canonical += 1
-            
-            # Create model matches
-            for model_dict in match.models:
-                ai_model = self.session.query(AIModel).filter(
-                    AIModel.id == model_dict['id']
+            if match.canonical_name not in canonical_map:
+                # Check if already exists
+                canonical = self.session.query(CanonicalModel).filter(
+                    CanonicalModel.canonical_name == match.canonical_name
                 ).first()
                 
-                if ai_model:
-                    model_match = ModelMatch(
-                        canonical_model_id=canonical.id,
-                        ai_model_id=ai_model.id,
-                        confidence=match.confidence,
-                        matched_by='llm',
-                        matched_at=datetime.utcnow()
+                if canonical:
+                    # Store existing ID
+                    canonical_map[match.canonical_name] = canonical.id
+                else:
+                    # Get representative model for description
+                    best_model = match.get_best_price()
+                    if not best_model:
+                        best_model = match.models[0]
+                    
+                    # Validate and use model_type from VALID_MODEL_TYPES
+                    model_type = best_model.get('model_type')
+                    if model_type not in VALID_MODEL_TYPES:
+                        print(f"⚠️  Invalid model_type '{model_type}' for canonical model, defaulting to 'other'")
+                        model_type = 'other'
+                    
+                    canonical = CanonicalModel(
+                        canonical_name=match.canonical_name,
+                        display_name=match.canonical_name.replace('-', ' ').title(),
+                        description=best_model.get('description', ''),
+                        model_type=model_type,
+                        tags=list(set([tag for m in match.models for tag in (m.get('tags') or [])]))
                     )
-                    self.session.add(model_match)
-                    created_matches += 1
+                    self.session.add(canonical)
+                    canonical_objects.append(canonical)
+                    created_canonical += 1
         
-        self.session.commit()
+        # Commit all canonical models at once
+        if created_canonical > 0:
+            try:
+                print(f"💾 Committing {created_canonical} canonical models...")
+                self.session.flush()  # Flush to get IDs
+                
+                # Store IDs before commit (while objects are still attached)
+                for canonical in canonical_objects:
+                    canonical_map[canonical.canonical_name] = canonical.id
+                
+                self.session.commit()
+                print(f"✅ Canonical models committed successfully")
+            except Exception as e:
+                print(f"❌ Failed to commit canonical models: {e}")
+                self.session.rollback()
+                raise
+        
+        # Pass 2: Create model matches
+        print(f"🔗 Creating model matches...")
+        match_batch_size = 100
+        for match in matches:
+            canonical_id = canonical_map.get(match.canonical_name)
+            if not canonical_id:
+                print(f"⚠️  Skipping match for {match.canonical_name} - no canonical ID found")
+                continue
+            
+            # Create model matches directly using model IDs (no query needed)
+            for model_dict in match.models:
+                model_match = ModelMatch(
+                    canonical_model_id=canonical_id,
+                    ai_model_id=model_dict['id'],
+                    confidence=match.confidence,
+                    matched_by='llm',
+                    matched_at=datetime.utcnow()
+                )
+                self.session.add(model_match)
+                created_matches += 1
+                
+                # Commit in batches to avoid timeouts
+                if created_matches % match_batch_size == 0:
+                    try:
+                        self.session.commit()
+                        print(f"  💾 Committed {created_matches} matches...")
+                        
+                        # Test connection health after commit
+                        self.session.execute(text("SELECT 1"))
+                    except Exception as e:
+                        print(f"  ⚠️  Batch commit failed, reconnecting: {e}")
+                        self.session.rollback()
+                        # Force reconnection
+                        from ai_cost_manager.database import engine
+                        engine.dispose()
+                        # Verify reconnection works
+                        self.session.execute(text("SELECT 1"))
+        
+        # Final commit with error handling
+        try:
+            self.session.commit()
+            print(f"✅ Successfully saved all matches to database")
+        except Exception as e:
+            print(f"❌ Failed to commit final matches: {e}")
+            self.session.rollback()
+            # Try to reconnect and commit one more time
+            from ai_cost_manager.database import engine
+            engine.dispose()
+            try:
+                self.session.commit()
+                print(f"✅ Retry successful")
+            except Exception as e2:
+                print(f"❌ Retry also failed: {e2}")
+                raise
         
         return {
             'status': 'success',

@@ -39,14 +39,18 @@ else:
 
 # Configure engine based on database type
 if DATABASE_URL.startswith('postgresql'):
-    # PostgreSQL configuration
+    # PostgreSQL configuration with robust connection handling
     engine = create_engine(
         DATABASE_URL,
         echo=False,
-        pool_size=10,
-        max_overflow=20,
-        pool_pre_ping=True,  # Verify connections before using
-        pool_recycle=3600    # Recycle connections after 1 hour
+        pool_size=5,           # Reduced pool size for better resource management
+        max_overflow=10,       # Reduced overflow
+        pool_pre_ping=True,    # Verify connections before using (catches stale connections)
+        pool_recycle=1800,     # Recycle connections after 30 minutes (was 1 hour)
+        connect_args={
+            'connect_timeout': 10,      # 10 second connection timeout
+            'options': '-c statement_timeout=60000'  # 60 second query timeout (increased from 30)
+        }
     )
 elif DATABASE_URL.startswith('sqlite'):
     # SQLite configuration
@@ -64,20 +68,53 @@ session_factory = sessionmaker(bind=engine)
 Session = scoped_session(session_factory)
 
 
-def init_db():
-    """Initialize the database - create all tables and seed default data"""
-    # Only create tables, never drop them
-    # This is safe to run multiple times - it won't affect existing data
-    Base.metadata.create_all(engine, checkfirst=True)
-    print("Database initialized successfully!")
+def init_db(max_retries=3, retry_delay=2):
+    """Initialize the database - create all tables and seed default data
     
-    # Seed default sources only if the table is empty
-    _seed_default_sources()
+    Args:
+        max_retries: Maximum number of retry attempts
+        retry_delay: Delay in seconds between retries
+    """
+    import time
+    from sqlalchemy.exc import OperationalError
+    
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            # Only create tables, never drop them
+            # This is safe to run multiple times - it won't affect existing data
+            Base.metadata.create_all(engine, checkfirst=True)
+            print("Database initialized successfully!")
+            
+            # Seed default sources only if the table is empty
+            _seed_default_sources()
+            return  # Success!
+            
+        except OperationalError as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                print(f"⚠️  Database connection failed (attempt {attempt + 1}/{max_retries}): {str(e)[:100]}")
+                print(f"   Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                # Dispose of the current engine pool to force reconnection
+                engine.dispose()
+            else:
+                print(f"❌ Failed to initialize database after {max_retries} attempts")
+                raise
+        except Exception as e:
+            print(f"❌ Unexpected error during database initialization: {e}")
+            raise
+    
+    # If we got here, all retries failed
+    if last_error:
+        raise last_error
 
 
 def _seed_default_sources():
     """Add default API sources if they don't exist"""
     from ai_cost_manager.models import APISource
+    from sqlalchemy.exc import OperationalError
+    import time
     
     default_sources = [
         {
@@ -112,22 +149,35 @@ def _seed_default_sources():
         },
     ]
     
-    session = get_session()
-    try:
-        for source_data in default_sources:
-            # Check if source already exists
-            existing = session.query(APISource).filter_by(name=source_data['name']).first()
-            if not existing:
-                source = APISource(**source_data)
-                session.add(source)
-                print(f"Added default source: {source_data['name']}")
-        
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        print(f"Error seeding default sources: {e}")
-    finally:
-        session.close()
+    max_retries = 3
+    for attempt in range(max_retries):
+        session = get_session()
+        try:
+            for source_data in default_sources:
+                # Check if source already exists
+                existing = session.query(APISource).filter_by(name=source_data['name']).first()
+                if not existing:
+                    source = APISource(**source_data)
+                    session.add(source)
+                    print(f"Added default source: {source_data['name']}")
+            
+            session.commit()
+            return  # Success!
+            
+        except OperationalError as e:
+            session.rollback()
+            if attempt < max_retries - 1:
+                print(f"⚠️  Database connection issue while seeding sources (attempt {attempt + 1}/{max_retries})")
+                time.sleep(1)
+                engine.dispose()
+            else:
+                print(f"⚠️  Could not seed default sources after {max_retries} attempts: {e}")
+        except Exception as e:
+            session.rollback()
+            print(f"Error seeding default sources: {e}")
+            break
+        finally:
+            session.close()
 
 
 def get_session():

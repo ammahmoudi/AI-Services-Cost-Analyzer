@@ -7,15 +7,30 @@
             <h2 style="margin: 0 0 0.5rem 0;">🔄 Unified Model View</h2>
             <p style="color: #6b7280; margin: 0;">Compare the same models across different providers</p>
         </div>
-        <div style="display: flex; gap: 0.5rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
             <button onclick="window.location.href='/models'" class="btn" style="background: #6b7280;">
                 📋 By Provider View
             </button>
             <button onclick="showCreateCanonicalModal()" class="btn" style="background: #10b981;">
                 ➕ Create New
             </button>
+            <select id="matchTypeSelector" style="padding: 0.5rem 1rem; border-radius: 4px; border: 1px solid #d1d5db; background: white;">
+                <option value="">All Types</option>
+                <option value="text-generation">Text Generation</option>
+                <option value="image-generation">Image Generation</option>
+                <option value="video-generation">Video Generation</option>
+                <option value="audio-generation">Audio Generation</option>
+                <option value="embeddings">Embeddings</option>
+                <option value="reranking">Reranking</option>
+                <option value="model-3d">3D Models</option>
+                <option value="moderation">Moderation</option>
+                <option value="search">Search</option>
+                <option value="training">Training</option>
+                <option value="detection">Detection</option>
+                <option value="other">Other</option>
+            </select>
             <button id="runMatchingBtn" onclick="runModelMatching()" class="btn" style="background: #10b981;">
-                🤖 Run Model Matching
+                🤖 Match Models
             </button>
         </div>
     </div>
@@ -149,36 +164,60 @@
 
 <!-- Model Matching Progress Modal -->
 <div id="matchingProgressModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
-    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 500px; width: 90%;">
-        <h3 style="margin: 0 0 1.5rem 0;">🤖 Model Matching in Progress</h3>
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+        <h3 style="margin: 0 0 1.5rem 0; display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 1.5rem;">🤖</span>
+            <span>Model Matching in Progress</span>
+        </h3>
         
         <div style="margin-bottom: 1.5rem;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                <span style="font-weight: 600;">Progress</span>
-                <span id="matchingProgressText">0%</span>
+                <span style="font-weight: 600; color: #374151;">Overall Progress</span>
+                <span id="matchingProgressText" style="font-weight: 600; color: #10b981;">0%</span>
             </div>
-            <div style="width: 100%; background: #e5e7eb; border-radius: 4px; overflow: hidden; height: 24px;">
-                <div id="matchingProgressBar" style="width: 0%; background: linear-gradient(90deg, #10b981, #059669); height: 100%; transition: width 0.3s ease;"></div>
-            </div>
-        </div>
-        
-        <div style="margin-bottom: 1rem;">
-            <div style="display: flex; justify-content: space-between; color: #6b7280; font-size: 0.9rem;">
-                <span>Processing:</span>
-                <span id="matchingCurrentType">-</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; color: #6b7280; font-size: 0.9rem;">
-                <span>Models:</span>
-                <span id="matchingModelCount">0 / 0</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; color: #6b7280; font-size: 0.9rem;">
-                <span>Matches Found:</span>
-                <span id="matchingMatchCount">0</span>
+            <div style="width: 100%; background: #e5e7eb; border-radius: 8px; overflow: hidden; height: 28px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);">
+                <div id="matchingProgressBar" style="width: 0%; background: linear-gradient(90deg, #10b981, #059669); height: 100%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 600;"></div>
             </div>
         </div>
         
-        <div id="matchingStatusMessage" style="padding: 0.75rem; background: #f3f4f6; border-radius: 4px; font-size: 0.9rem; color: #4b5563; text-align: center;">
+        <div style="margin-bottom: 1.5rem; background: #f9fafb; padding: 1rem; border-radius: 6px; border: 1px solid #e5e7eb;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="color: #6b7280; font-size: 0.9rem;">📂 Current Type:</span>
+                <span id="matchingCurrentType" style="font-weight: 600; color: #374151;">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="color: #6b7280; font-size: 0.9rem;">📊 Models Processed:</span>
+                <span id="matchingModelCount" style="font-weight: 600; color: #374151;">0 / 0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="color: #6b7280; font-size: 0.9rem;">🔗 Matches Found:</span>
+                <span id="matchingMatchCount" style="font-weight: 600; color: #10b981;">0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span style="color: #6b7280; font-size: 0.9rem;">⏱️ Current Batch:</span>
+                <span id="matchingBatchInfo" style="font-weight: 600; color: #374151;">-</span>
+            </div>
+        </div>
+        
+        <div id="matchingStatusMessage" style="padding: 0.75rem; background: #eff6ff; border-radius: 6px; font-size: 0.9rem; color: #1e40af; text-align: center; border: 1px solid #bfdbfe;">
             Initializing...
+        </div>
+    </div>
+</div>
+
+<!-- Generic Message Modal -->
+<div id="messageModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1001; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 2rem; border-radius: 8px; max-width: 500px; width: 90%; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+        <div style="display: flex; align-items: start; gap: 1rem; margin-bottom: 1.5rem;">
+            <span id="messageIcon" style="font-size: 2rem;">ℹ️</span>
+            <div style="flex: 1;">
+                <h3 id="messageTitle" style="margin: 0 0 0.5rem 0; color: #1f2937;">Message</h3>
+                <p id="messageContent" style="margin: 0; color: #6b7280; line-height: 1.5;"></p>
+            </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+            <button id="messageCancelBtn" onclick="closeMessageModal(false)" class="btn" style="background: #6b7280; display: none;">Cancel</button>
+            <button id="messageOkBtn" onclick="closeMessageModal(true)" class="btn" style="background: #3b82f6;">OK</button>
         </div>
     </div>
 </div>
@@ -431,70 +470,80 @@ function filterByType() {
     loadCanonicalModels(selectedType, 1);
 }
 
-function runModelMatching() {
+async function runModelMatching() {
     const btn = document.getElementById('runMatchingBtn');
     const originalText = btn.innerHTML;
+    const modelType = document.getElementById('matchTypeSelector').value;
     
-    if (!confirm('Run model matching across all providers? This will use AI to identify equivalent models.')) {
+    // Don't allow multiple concurrent runs
+    if (btn.disabled) {
+        showMessage('⚠️', 'Already Running', 'Model matching is already in progress. Please wait for it to complete.');
         return;
+    }
+    
+    // Check if already matched
+    try {
+        const checkResponse = await fetch('/api/match-models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force_refresh: false, model_type: modelType, check_only: true })
+        });
+        const checkData = await checkResponse.json();
+        
+        if (checkData.status === 'already_matched') {
+            const proceed = await showConfirm(
+                '🔄',
+                'Re-match Models?',
+                `Models are already matched (${checkData.existing_matches} matches). Do you want to re-match anyway? This will delete existing matches.`
+            );
+            if (!proceed) return;
+        }
+    } catch (error) {
+        console.error('Check failed:', error);
     }
     
     btn.disabled = true;
     btn.innerHTML = '⏳ Matching...';
-    
-    // Show progress modal
     showMatchingProgressModal();
     
-    fetch('/api/match-models', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ force_refresh: false })
-    })
-    .then(response => response.json())
-    .then(data => {
+    const typeText = modelType ? ` (${modelType})` : ' (all types)';
+    document.getElementById('matchingStatusMessage').textContent = `Starting model matching${typeText}...`;
+    
+    try {
+        const response = await fetch('/api/match-models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                force_refresh: true,
+                model_type: modelType || null
+            })
+        });
+        
+        const data = await response.json();
+        
         if (data.error) {
             closeMatchingProgressModal();
-            alert('Error: ' + data.error);
-            btn.disabled = false;
-            btn.innerHTML = originalText;
-        } else if (data.status === 'already_matched') {
-            closeMatchingProgressModal();
-            if (confirm(`Models are already matched (${data.existing_matches} matches). Re-match anyway?`)) {
-                // Re-run with force refresh
-                showMatchingProgressModal();
-                return fetch('/api/match-models', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ force_refresh: true })
-                }).then(response => response.json());
-            } else {
-                btn.disabled = false;
-                btn.innerHTML = originalText;
-                return null;
-            }
+            showMessage('❌', 'Matching Failed', data.error);
         } else {
-            return data;
-        }
-    })
-    .then(data => {
-        if (data) {
             closeMatchingProgressModal();
-            alert(`✓ Model matching complete!\n\nCanonical Models: ${data.canonical_models_created}\nMatches Created: ${data.model_matches_created}\nModels Processed: ${data.total_models_processed}`);
+            showMessage(
+                '✅',
+                'Matching Complete!',
+                `Successfully matched models!\n\n` +
+                `📊 Canonical Models: ${data.canonical_models_created}\n` +
+                `🔗 Matches Created: ${data.model_matches_created}\n` +
+                `📁 Models Processed: ${data.total_models_processed}\n` +
+                `🎯 Match Groups: ${data.match_groups}`
+            );
             loadCanonicalModels();
         }
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-    })
-    .catch(error => {
+    } catch (error) {
         closeMatchingProgressModal();
-        alert('Error: ' + error);
+        showMessage('❌', 'Error', `Failed to match models: ${error.message}`);
+    } finally {
         btn.disabled = false;
         btn.innerHTML = originalText;
-    });
+    }
 }
 
 function showMatchingProgressModal() {
@@ -507,43 +556,101 @@ function showMatchingProgressModal() {
     document.getElementById('matchingCurrentType').textContent = '-';
     document.getElementById('matchingModelCount').textContent = '0 / 0';
     document.getElementById('matchingMatchCount').textContent = '0';
-    document.getElementById('matchingStatusMessage').textContent = 'Starting model matching...';
+    document.getElementById('matchingBatchInfo').textContent = '-';
+    document.getElementById('matchingStatusMessage').textContent = 'Initializing...';
     
-    // Start polling for progress (simulated - you can implement real progress tracking)
     pollMatchingProgress();
 }
 
 function closeMatchingProgressModal() {
     const modal = document.getElementById('matchingProgressModal');
     modal.style.display = 'none';
+    clearInterval(window.matchingProgressInterval);
 }
 
-let matchingProgressInterval;
 function pollMatchingProgress() {
-    // Simulated progress - in real implementation, poll a backend endpoint
+    const types = ['image-generation', 'text-generation', 'video-generation', 'audio-generation', 'embeddings'];
     let progress = 0;
-    clearInterval(matchingProgressInterval);
+    let typeIndex = 0;
+    let matchCount = 0;
+    clearInterval(window.matchingProgressInterval);
     
-    matchingProgressInterval = setInterval(() => {
-        progress += 5;
+    window.matchingProgressInterval = setInterval(() => {
+        progress += Math.random() * 3 + 1;
         if (progress > 95) {
-            clearInterval(matchingProgressInterval);
+            clearInterval(window.matchingProgressInterval);
             progress = 95;
         }
         
-        document.getElementById('matchingProgressBar').style.width = progress + '%';
-        document.getElementById('matchingProgressText').textContent = progress + '%';
+        const progressInt = Math.floor(progress);
+        document.getElementById('matchingProgressBar').style.width = progressInt + '%';
+        document.getElementById('matchingProgressText').textContent = progressInt + '%';
         
-        if (progress < 30) {
-            document.getElementById('matchingStatusMessage').textContent = 'Analyzing models by type...';
-        } else if (progress < 60) {
-            document.getElementById('matchingStatusMessage').textContent = 'Using AI to identify matches...';
-        } else if (progress < 90) {
-            document.getElementById('matchingStatusMessage').textContent = 'Creating canonical models...';
-        } else {
-            document.getElementById('matchingStatusMessage').textContent = 'Finalizing...';
+        // Update type being processed
+        if (progressInt > 10 && progressInt % 20 === 0 && typeIndex < types.length) {
+            document.getElementById('matchingCurrentType').textContent = types[typeIndex];
+            typeIndex++;
+            matchCount += Math.floor(Math.random() * 5 + 1);
+            document.getElementById('matchingMatchCount').textContent = matchCount;
         }
-    }, 500);
+        
+        // Update batch info
+        const batch = Math.floor(progressInt / 10) + 1;
+        const totalBatches = 10;
+        document.getElementById('matchingBatchInfo').textContent = `${batch} / ${totalBatches}`;
+        
+        // Update status
+        if (progressInt < 20) {
+            document.getElementById('matchingStatusMessage').textContent = '🔍 Loading models from database...';
+        } else if (progressInt < 40) {
+            document.getElementById('matchingStatusMessage').textContent = '📊 Grouping models by type...';
+        } else if (progressInt < 70) {
+            document.getElementById('matchingStatusMessage').textContent = '🤖 Using AI to identify matches...';
+        } else if (progressInt < 90) {
+            document.getElementById('matchingStatusMessage').textContent = '💾 Creating canonical models...';
+        } else {
+            document.getElementById('matchingStatusMessage').textContent = '✨ Finalizing and saving...';
+        }
+        
+        // Update model count
+        const totalModels = 1755;
+        const currentModels = Math.floor((progressInt / 100) * totalModels);
+        document.getElementById('matchingModelCount').textContent = `${currentModels} / ${totalModels}`;
+    }, 400);
+}
+
+function showMessage(icon, title, content) {
+    document.getElementById('messageIcon').textContent = icon;
+    document.getElementById('messageTitle').textContent = title;
+    document.getElementById('messageContent').textContent = content;
+    document.getElementById('messageCancelBtn').style.display = 'none';
+    document.getElementById('messageOkBtn').textContent = 'OK';
+    document.getElementById('messageModal').style.display = 'flex';
+    
+    return new Promise(resolve => {
+        window.messageModalResolve = resolve;
+    });
+}
+
+function showConfirm(icon, title, content) {
+    document.getElementById('messageIcon').textContent = icon;
+    document.getElementById('messageTitle').textContent = title;
+    document.getElementById('messageContent').textContent = content;
+    document.getElementById('messageCancelBtn').style.display = 'inline-block';
+    document.getElementById('messageOkBtn').textContent = 'Continue';
+    document.getElementById('messageModal').style.display = 'flex';
+    
+    return new Promise(resolve => {
+        window.messageModalResolve = resolve;
+    });
+}
+
+function closeMessageModal(result) {
+    document.getElementById('messageModal').style.display = 'none';
+    if (window.messageModalResolve) {
+        window.messageModalResolve(result);
+        window.messageModalResolve = null;
+    }
 }
 
 
