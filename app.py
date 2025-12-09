@@ -2872,22 +2872,38 @@ def api_search_model():
         
         # Normalize search query for better matching
         # Remove common separators and convert to lowercase
-        search_normalized = name.lower().replace('-', '').replace('_', '').replace('.', '').replace(' ', '')
+        def normalize_text(text):
+            if not text:
+                return ''
+            return text.lower().replace('-', '').replace('_', '').replace('.', '').replace(' ', '')
         
-        # Search for models using multiple strategies:
-        # 1. Direct name match (case-insensitive)
-        # 2. Model ID match (case-insensitive)
-        # 3. Normalized match (removes separators)
-        from sqlalchemy import or_, func
+        search_normalized = normalize_text(name)
         
-        models = session.query(AIModel).filter(
-            or_(
-                AIModel.name.ilike(f'%{name}%'),
-                AIModel.model_id.ilike(f'%{name}%'),
-                func.replace(func.replace(func.replace(func.lower(AIModel.name), '-', ''), '_', ''), '.', '').like(f'%{search_normalized}%'),
-                func.replace(func.replace(func.replace(func.lower(AIModel.model_id), '-', ''), '_', ''), '.', '').like(f'%{search_normalized}%')
-            )
-        ).all()
+        # Get all models and filter in Python for better matching
+        # This allows flexible string matching that SQL can't easily do
+        all_models = session.query(AIModel).all()
+        
+        matched_models = []
+        for model in all_models:
+            # Check multiple match criteria
+            name_lower = (model.name or '').lower()
+            model_id_lower = (model.model_id or '').lower()
+            name_normalized = normalize_text(model.name)
+            model_id_normalized = normalize_text(model.model_id)
+            search_lower = name.lower()
+            
+            # Match if any of these conditions are true:
+            # 1. Direct substring match in name
+            # 2. Direct substring match in model_id
+            # 3. Normalized substring match in name
+            # 4. Normalized substring match in model_id
+            if (search_lower in name_lower or 
+                search_lower in model_id_lower or
+                search_normalized in name_normalized or
+                search_normalized in model_id_normalized):
+                matched_models.append(model)
+        
+        models = matched_models
         
         if not models:
             return jsonify({
