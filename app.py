@@ -2905,22 +2905,28 @@ def api_search_model():
             # Calculate multiple similarity scores
             name_score = fuzz.partial_ratio(name.lower(), data['name'].lower())
             model_id_score = fuzz.partial_ratio(name.lower(), data['model_id'].lower())
-            combined_score = fuzz.partial_ratio(name.lower(), data['search_text'].lower())
-            token_sort_score = fuzz.token_sort_ratio(name.lower(), data['name'].lower())
-            token_set_score = fuzz.token_set_ratio(name.lower(), data['search_text'].lower())
             
-            # Calculate weighted score
-            # Prioritize exact matches in name and model_id
-            max_score = max(name_score, model_id_score, combined_score, token_sort_score, token_set_score)
-            weighted_score = (name_score * 1.5 + model_id_score * 1.3 + combined_score + 
-                            token_sort_score * 1.2 + token_set_score * 0.8) / 5.8
+            # For more accurate matching, use token_sort for exact word matching
+            token_sort_name = fuzz.token_sort_ratio(name.lower(), data['name'].lower())
+            token_sort_model_id = fuzz.token_sort_ratio(name.lower(), data['model_id'].lower())
             
-            # Use a threshold to filter out poor matches
-            if max_score >= 60:  # Only include decent matches
+            # Use WRatio for best overall matching
+            wratio_name = fuzz.WRatio(name.lower(), data['name'].lower())
+            wratio_model_id = fuzz.WRatio(name.lower(), data['model_id'].lower())
+            
+            # Calculate weighted score - prioritize name and model_id over description
+            # Higher weight for exact name/model_id matches
+            max_primary_score = max(name_score, model_id_score, token_sort_name, token_sort_model_id)
+            weighted_score = (wratio_name * 2.0 + wratio_model_id * 1.8 + name_score * 1.5 + 
+                            model_id_score * 1.3 + token_sort_name * 1.2 + token_sort_model_id * 1.0) / 9.8
+            
+            # Use a stricter threshold to filter out poor matches
+            # Must have high score in primary fields (name or model_id)
+            if max_primary_score >= 70 and weighted_score >= 65:  # Stricter threshold
                 matched_results.append({
                     'model': data['model'],
                     'score': weighted_score,
-                    'max_score': max_score
+                    'max_score': max_primary_score
                 })
         
         # Sort by weighted score descending
@@ -2963,13 +2969,17 @@ def api_search_model():
             }
             model_list.append(model_data)
             
-            # Track cheapest model (use the data dict value, not the SQLAlchemy column)
-            if model_data['cost_per_call'] is not None and model_data['cost_per_call'] < cheapest_price:
+            # Track cheapest model - only consider models with actual pricing
+            if model_data['cost_per_call'] is not None and model_data['cost_per_call'] > 0 and model_data['cost_per_call'] < cheapest_price:
                 cheapest_price = model_data['cost_per_call']
                 cheapest_model = model_data
         
-        # Sort by price (cheapest first, then by name)
-        model_list.sort(key=lambda x: (x['cost_per_call'] if x['cost_per_call'] is not None else float('inf'), x['name']))
+        # Sort by price (cheapest with actual price first, then N/A prices, then by name)
+        model_list.sort(key=lambda x: (
+            0 if x['cost_per_call'] is not None and x['cost_per_call'] > 0 else 1,  # Priced models first
+            x['cost_per_call'] if x['cost_per_call'] is not None else float('inf'),  # Sort by price
+            x['name']  # Then by name
+        ))
         
         return jsonify({
             'success': True,
