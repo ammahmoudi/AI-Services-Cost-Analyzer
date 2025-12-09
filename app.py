@@ -577,9 +577,63 @@ def canonical_models_page():
     return render_template('canonical_models.html')
 
 
+@app.route('/canonical-models/<int:canonical_id>')
+def canonical_model_detail(canonical_id):
+    """Show detailed information about a canonical model"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    from ai_cost_manager.models import CanonicalModel, ModelMatch
+    
+    session = get_session()
+    
+    try:
+        # Get canonical model
+        canonical = session.query(CanonicalModel).filter_by(id=canonical_id).first()
+        if not canonical:
+            flash('Unified model not found!', 'error')
+            return redirect(url_for('canonical_models_page'))
+        
+        # Get all matched models with provider details
+        matches = session.query(ModelMatch).filter(
+            ModelMatch.canonical_model_id == canonical_id
+        ).all()
+        
+        providers = []
+        for match in matches:
+            if match.ai_model:
+                providers.append({
+                    'id': match.ai_model.id,
+                    'model_id': match.ai_model.model_id,
+                    'name': match.ai_model.name,
+                    'provider': match.ai_model.source.name if match.ai_model.source else 'unknown',
+                    'cost_per_call': match.ai_model.cost_per_call,
+                    'pricing_formula': match.ai_model.pricing_formula,
+                    'description': match.ai_model.description,
+                    'confidence': match.confidence,
+                    'matched_by': match.matched_by,
+                })
+        
+        # Sort by price
+        providers.sort(key=lambda x: x['cost_per_call'] if x['cost_per_call'] else float('inf'))
+        
+        # Calculate savings
+        prices = [p['cost_per_call'] for p in providers if p['cost_per_call'] and p['cost_per_call'] > 0]
+        savings_percent = 0
+        if len(prices) > 1:
+            savings_percent = ((max(prices) - min(prices)) / max(prices) * 100)
+        
+        return render_template('canonical_model_detail.html', 
+                             canonical=canonical, 
+                             providers=providers,
+                             savings_percent=savings_percent)
+    finally:
+        close_session()
+
+
 @app.route('/models/<int:model_id>')
 def model_detail(model_id):
     """Show detailed information about a model"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    
     session = get_session()
     
     try:
@@ -588,7 +642,13 @@ def model_detail(model_id):
             flash('Model not found!', 'error')
             return redirect(url_for('models'))
         
-        return render_template('model_detail.html', model=model)
+        # Get canonical model and alternatives if matched
+        service = ModelMatchingService(session)
+        alternatives_data = service.get_model_with_alternatives(model_id)
+        
+        return render_template('model_detail.html', 
+                             model=model,
+                             alternatives_data=alternatives_data)
     finally:
         close_session()
 
@@ -2066,6 +2126,72 @@ def get_canonical_model_detail(canonical_id):
             'providers': providers,
             'best_price': providers[0] if providers else None,
         })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models/<int:canonical_id>/suspected-matches', methods=['GET'])
+def get_suspected_matches(canonical_id):
+    """Get models that might match this canonical model"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    
+    session = get_session()
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        service = ModelMatchingService(session)
+        suspects = service.get_suspected_matches(canonical_id, limit=limit)
+        
+        return jsonify({
+            'canonical_id': canonical_id,
+            'suspects': suspects,
+            'count': len(suspects)
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models/<int:canonical_id>/add-model', methods=['POST'])
+def add_model_to_canonical(canonical_id):
+    """Manually add a model to a canonical group"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    
+    session = get_session()
+    try:
+        data = request.get_json()
+        model_id = data.get('model_id')
+        confidence = data.get('confidence', 0.9)
+        
+        if not model_id:
+            return jsonify({'error': 'model_id is required'}), 400
+        
+        service = ModelMatchingService(session)
+        result = service.manually_add_match(canonical_id, model_id, confidence)
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        close_session()
+
+
+@app.route('/api/canonical-models/<int:canonical_id>/remove-model/<int:model_id>', methods=['DELETE'])
+def remove_model_from_canonical(canonical_id, model_id):
+    """Remove a model from a canonical group"""
+    from ai_cost_manager.model_matching_service import ModelMatchingService
+    
+    session = get_session()
+    try:
+        service = ModelMatchingService(session)
+        result = service.remove_match(canonical_id, model_id)
+        
+        return jsonify(result)
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500

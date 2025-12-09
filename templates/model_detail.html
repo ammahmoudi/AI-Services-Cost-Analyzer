@@ -5,7 +5,13 @@
     <a href="/models" style="color: #2563eb; text-decoration: none; margin-bottom: 1rem; display: inline-block;">← Back to Models</a>
     
     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
-        <h2 style="margin: 0;">{{ model.name }}</h2>
+        <div>
+            <h2 style="margin: 0 0 0.5rem 0;">{{ model.name }}</h2>
+            <p style="color: #6b7280; margin: 0;">
+                <span class="badge badge-blue">{{ model.model_type }}</span>
+                <span style="margin-left: 0.5rem;">{{ model.source.name if model.source else 'Unknown Provider' }}</span>
+            </p>
+        </div>
         <div style="display: flex; gap: 0.5rem;">
             <button id="refetchBtn" class="btn" onclick="refetchModel({{ model.id }})" style="background: #f59e0b;">
                 🔄 Re-fetch Data
@@ -15,6 +21,16 @@
             </button>
         </div>
     </div>
+
+    {% if model.tags %}
+    <div style="margin: 1.5rem 0;">
+        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+            {% for tag in model.tags %}
+                <span class="badge badge-gray">{{ tag }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
     
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin: 2rem 0;">
         <div>
@@ -36,9 +52,69 @@
     </div>
     
     {% if model.description %}
-    <div style="margin: 2rem 0;">
-        <h3 style="margin-bottom: 0.5rem;">Description</h3>
-        <p style="color: #4b5563;">{{ model.description }}</p>
+    <div style="margin: 2rem 0; padding: 1rem; background: #f9fafb; border-left: 4px solid #3b82f6; border-radius: 4px;">
+        <h3 style="margin: 0 0 0.5rem 0; color: #4b5563;">Description</h3>
+        <p style="margin: 0; color: #6b7280; line-height: 1.6;">{{ model.description }}</p>
+    </div>
+    {% endif %}
+    
+    {% if alternatives_data and alternatives_data.alternatives %}
+    <div style="margin: 2rem 0; padding: 1.5rem; background: #fffbeb; border: 2px solid #fde68a; border-radius: 8px;">
+        <h3 style="margin: 0 0 1rem 0; color: #92400e;">🔄 Alternative Providers ({{ alternatives_data.alternatives|length }})</h3>
+        
+        {% if alternatives_data.potential_savings > 0 %}
+        <div style="margin-bottom: 1rem; padding: 0.75rem; background: #dcfce7; border-left: 4px solid #10b981; border-radius: 4px;">
+            <strong style="color: #065f46;">💰 You could save ${{ "%.6f"|format(alternatives_data.potential_savings) }} per call with the best alternative!</strong>
+        </div>
+        {% endif %}
+        
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #fbbf24;">
+                        <th style="text-align: left; padding: 0.5rem; color: #92400e;">Provider</th>
+                        <th style="text-align: right; padding: 0.5rem; color: #92400e;">Price / Call</th>
+                        <th style="text-align: center; padding: 0.5rem; color: #92400e;">Savings</th>
+                        <th style="text-align: right; padding: 0.5rem;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for alt in alternatives_data.alternatives[:5] %}
+                    <tr style="border-bottom: 1px solid #fde68a;">
+                        <td style="padding: 0.5rem; font-weight: 500;">{{ alt.provider }}</td>
+                        <td style="padding: 0.5rem; text-align: right; font-weight: 600; color: #b45309;">
+                            {% if alt.cost_per_call %}
+                                ${{ "%.6f"|format(alt.cost_per_call) }}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.5rem; text-align: center;">
+                            {% if alt.cost_per_call and model.cost_per_call %}
+                                {% set savings = ((model.cost_per_call - alt.cost_per_call) / model.cost_per_call * 100) %}
+                                {% if savings > 0 %}
+                                    <span style="color: #065f46; font-weight: 600;">-{{ "%.0f"|format(savings) }}%</span>
+                                {% else %}
+                                    <span style="color: #dc2626; font-weight: 600;">+{{ "%.0f"|format(-savings) }}%</span>
+                                {% endif %}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.5rem; text-align: right;">
+                            <a href="/models/{{ alt.model_id }}" class="btn-sm">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        {% if alternatives_data.alternatives|length > 5 %}
+        <div style="margin-top: 0.75rem; text-align: center; color: #92400e; font-size: 0.9rem;">
+            + {{ alternatives_data.alternatives|length - 5 }} more alternative{{ 's' if alternatives_data.alternatives|length - 5 != 1 else '' }}
+        </div>
+        {% endif %}
     </div>
     {% endif %}
     

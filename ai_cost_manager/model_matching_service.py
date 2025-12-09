@@ -11,6 +11,7 @@ from ai_cost_manager.models import AIModel, CanonicalModel, ModelMatch, APISourc
 from ai_cost_manager.model_matcher import ModelMatcher
 from ai_cost_manager.model_types import VALID_MODEL_TYPES
 from datetime import datetime
+import json
 
 
 class ModelMatchingService:
@@ -392,3 +393,197 @@ class ModelMatchingService:
                 else 0
             )
         }
+    
+    def get_suspected_matches(self, canonical_id: int, limit: int = 10) -> List[Dict]:
+        """
+        Find models that might match this canonical model but aren't currently linked.
+        Uses LLM to find potential matches based on name and description similarity.
+        
+        Args:
+            canonical_id: ID of the canonical model
+            limit: Maximum number of suggestions to return
+            
+        Returns:
+            List of suspected matching models with confidence scores
+        """
+        canonical = self.session.query(CanonicalModel).filter(
+            CanonicalModel.id == canonical_id
+        ).first()
+        
+        if not canonical:
+            return []
+        
+        # Get models already matched to this canonical
+        matched_ids = [
+            match.ai_model_id 
+            for match in self.session.query(ModelMatch).filter(
+                ModelMatch.canonical_model_id == canonical_id
+            ).all()
+        ]
+        
+        # Get unmatched models of the same type
+        unmatched_query = self.session.query(AIModel).filter(
+            AIModel.model_type == canonical.model_type,
+            AIModel.is_active == True
+        )
+        
+        if matched_ids:
+            unmatched_query = unmatched_query.filter(~AIModel.id.in_(matched_ids))
+        
+        unmatched_models = unmatched_query.limit(100).all()
+        
+        if not unmatched_models:
+            return []
+        
+        # Use LLM to find potential matches
+        from ai_cost_manager.llm_client import LLMClient
+        from ai_cost_manager.llm_config import get_llm_config
+        
+        canonical_info = {
+            'name': canonical.canonical_name,
+            'display_name': canonical.display_name,
+            'description': canonical.description,
+            'tags': canonical.tags or []
+        }
+        
+        candidate_models = []
+        for model in unmatched_models:
+            candidate_models.append({
+                'id': model.id,
+                'name': model.name,
+                'model_id': model.model_id,
+                'description': model.description or '',
+                'provider': model.source.name if model.source else 'unknown',
+                'tags': model.tags or []
+            })
+        
+        prompt = f"""You are analyzing whether unmatched models might be the same as a canonical model.
+
+Canonical Model:
+{json.dumps(canonical_info, indent=2)}
+
+Candidate Models:
+{json.dumps(candidate_models[:50], indent=2)}
+
+Your task: Find models that MIGHT be the same as the canonical model, but with lower confidence.
+- Look for similar names, descriptions, or underlying technology
+- Consider brand names or wrappers (e.g., "Nano Banana" wrapping "Gemini")
+- Return confidence between 0.5-0.89 (0.90+ would have been auto-matched)
+- Be slightly more liberal than auto-matching, but still require reasonable evidence
+
+Return JSON array of suspected matches:
+[{{"model_id": 123, "confidence": 0.75, "reasoning": "Similar name but different provider"}}]
+
+If no reasonable suspects found, return empty array: []
+"""
+        
+        try:
+            config = get_llm_config()
+            llm_client = LLMClient(config)
+            response = llm_client.chat(prompt, temperature=0.2, max_tokens=2000)
+            
+            # Parse response
+            import re
+            json_match = re.search(r'\[.*\]', response, re.DOTALL)
+            if json_match:
+                suspects = json.loads(json_match.group())
+                
+                # Enrich with model details
+                result = []
+                for suspect in suspects[:limit]:
+                    model = next((m for m in unmatched_models if m.id == suspect['model_id']), None)
+                    if model:
+                        result.append({
+                            'id': model.id,
+                            'name': model.name,
+                            'model_id': model.model_id,
+                            'provider': model.source.name if model.source else 'unknown',
+                            'description': model.description,
+                            'cost_per_call': model.cost_per_call,
+                            'confidence': suspect['confidence'],
+                            'reasoning': suspect['reasoning']
+                        })
+                
+                return result
+        except Exception as e:
+            print(f"Error finding suspected matches: {e}")
+            return []
+        
+        return []
+    
+    def manually_add_match(self, canonical_id: int, model_id: int, confidence: float = 0.9) -> Dict:
+        """
+        Manually add a model to a canonical group (user-confirmed match)
+        
+        Args:
+            canonical_id: ID of the canonical model
+            model_id: ID of the AI model to add
+            confidence: Confidence score (default 0.9 for manual matches)
+            
+        Returns:
+            Result dictionary with status
+        """
+        # Check if canonical exists
+        canonical = self.session.query(CanonicalModel).filter(
+            CanonicalModel.id == canonical_id
+        ).first()
+        
+        if not canonical:
+            return {'status': 'error', 'message': 'Canonical model not found'}
+        
+        # Check if model exists
+        model = self.session.query(AIModel).filter(AIModel.id == model_id).first()
+        if not model:
+            return {'status': 'error', 'message': 'AI model not found'}
+        
+        # Check if already matched
+        existing = self.session.query(ModelMatch).filter(
+            ModelMatch.canonical_model_id == canonical_id,
+            ModelMatch.ai_model_id == model_id
+        ).first()
+        
+        if existing:
+            return {'status': 'error', 'message': 'Model already matched to this canonical'}
+        
+        # Create new match
+        match = ModelMatch(
+            canonical_model_id=canonical_id,
+            ai_model_id=model_id,
+            confidence=confidence,
+            matched_by='manual',
+            matched_at=datetime.utcnow()
+        )
+        
+        self.session.add(match)
+        self.session.commit()
+        
+        return {
+            'status': 'success',
+            'message': 'Model added to canonical group',
+            'match_id': match.id
+        }
+    
+    def remove_match(self, canonical_id: int, model_id: int) -> Dict:
+        """
+        Remove a model from a canonical group
+        
+        Args:
+            canonical_id: ID of the canonical model
+            model_id: ID of the AI model to remove
+            
+        Returns:
+            Result dictionary with status
+        """
+        match = self.session.query(ModelMatch).filter(
+            ModelMatch.canonical_model_id == canonical_id,
+            ModelMatch.ai_model_id == model_id
+        ).first()
+        
+        if not match:
+            return {'status': 'error', 'message': 'Match not found'}
+        
+        self.session.delete(match)
+        self.session.commit()
+        
+        return {'status': 'success', 'message': 'Model removed from canonical group'}
+

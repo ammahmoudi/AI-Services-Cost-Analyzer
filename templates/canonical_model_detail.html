@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <a href="/canonical-models" style="color: #2563eb; text-decoration: none; margin-bottom: 1rem; display: inline-block;">← Back to Unified Models</a>
+    
+    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0 0 0.5rem 0;">{{ canonical.display_name }}</h2>
+            <p style="color: #6b7280; margin: 0;">
+                <span class="badge badge-blue">{{ canonical.model_type }}</span>
+                <span style="margin-left: 0.5rem;">📦 {{ providers|length }} provider{{ 's' if providers|length != 1 else '' }}</span>
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+            <button onclick="showSuspectedMatches()" class="btn" style="background: #f59e0b;">
+                🔍 Find Similar Models
+            </button>
+        </div>
+    </div>
+
+    {% if canonical.description %}
+    <div style="margin: 2rem 0; padding: 1rem; background: #f9fafb; border-left: 4px solid #667eea; border-radius: 4px;">
+        <h3 style="margin: 0 0 0.5rem 0; color: #4b5563;">Description</h3>
+        <p style="margin: 0; color: #6b7280; line-height: 1.6;">{{ canonical.description }}</p>
+    </div>
+    {% endif %}
+
+    {% if canonical.tags %}
+    <div style="margin: 2rem 0;">
+        <h3 style="margin: 0 0 0.75rem 0; color: #4b5563;">Tags</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+            {% for tag in canonical.tags %}
+                <span class="badge badge-gray">{{ tag }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Highlights -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 2rem 0;">
+        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 1.5rem; border-radius: 8px; color: white;">
+            <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 0.5rem;">💰 Best Price</div>
+            <div style="font-size: 1.75rem; font-weight: 700; margin-bottom: 0.25rem;">
+                {% if providers and providers[0].cost_per_call %}
+                    ${{ "%.6f"|format(providers[0].cost_per_call) }}
+                {% else %}
+                    N/A
+                {% endif %}
+            </div>
+            {% if providers and providers[0].cost_per_call %}
+                <div style="font-size: 0.85rem; opacity: 0.9;">{{ providers[0].provider }}</div>
+            {% endif %}
+        </div>
+
+        <div style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 1.5rem; border-radius: 8px; color: white;">
+            <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 0.5rem;">📊 Providers</div>
+            <div style="font-size: 1.75rem; font-weight: 700; margin-bottom: 0.25rem;">{{ providers|length }}</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">available options</div>
+        </div>
+
+        {% if savings_percent > 0 %}
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 1.5rem; border-radius: 8px; color: white;">
+            <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 0.5rem;">💵 Potential Savings</div>
+            <div style="font-size: 1.75rem; font-weight: 700; margin-bottom: 0.25rem;">{{ "%.0f"|format(savings_percent) }}%</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">vs highest price</div>
+        </div>
+        {% endif %}
+
+        <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 1.5rem; border-radius: 8px; color: white;">
+            <div style="font-size: 0.9rem; opacity: 0.9; margin-bottom: 0.5rem;">🔗 Canonical Name</div>
+            <div style="font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem; font-family: monospace;">{{ canonical.canonical_name }}</div>
+            <div style="font-size: 0.85rem; opacity: 0.9;">internal identifier</div>
+        </div>
+    </div>
+
+    <!-- Providers Table -->
+    <div style="margin: 2rem 0;">
+        <h3 style="margin: 0 0 1rem 0;">Available Providers</h3>
+        
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: #f3f4f6; border-bottom: 2px solid #e5e7eb;">
+                        <th style="text-align: left; padding: 0.75rem; font-weight: 600;">Provider</th>
+                        <th style="text-align: left; padding: 0.75rem; font-weight: 600;">Model Name</th>
+                        <th style="text-align: right; padding: 0.75rem; font-weight: 600;">Price / Call</th>
+                        <th style="text-align: center; padding: 0.75rem; font-weight: 600;">Match Confidence</th>
+                        <th style="text-align: center; padding: 0.75rem; font-weight: 600;">Matched By</th>
+                        <th style="text-align: right; padding: 0.75rem;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for provider in providers %}
+                    <tr style="border-bottom: 1px solid #e5e7eb; {% if loop.index0 == 0 and provider.cost_per_call %}background: #f0fdf4;{% endif %}">
+                        <td style="padding: 0.75rem; font-weight: 600;">
+                            {{ provider.provider }}
+                            {% if loop.index0 == 0 and provider.cost_per_call %}
+                                <span style="color: #10b981; margin-left: 0.25rem;">✓ Best</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.75rem;">
+                            <div style="font-weight: 500;">{{ provider.name }}</div>
+                            {% if provider.description %}
+                                <div style="font-size: 0.85rem; color: #6b7280; margin-top: 0.25rem;">
+                                    {{ provider.description[:100] }}{{ '...' if provider.description|length > 100 else '' }}
+                                </div>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.75rem; text-align: right;">
+                            {% if provider.cost_per_call %}
+                                <span style="font-weight: 700; font-size: 1.1rem; {% if loop.index0 == 0 %}color: #10b981;{% else %}color: #2563eb;{% endif %}">
+                                    ${{ "%.6f"|format(provider.cost_per_call) }}
+                                </span>
+                                {% if provider.pricing_formula %}
+                                    <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">
+                                        {{ provider.pricing_formula[:50] }}{{ '...' if provider.pricing_formula|length > 50 else '' }}
+                                    </div>
+                                {% endif %}
+                            {% else %}
+                                <span style="color: #9ca3af;">N/A</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.75rem; text-align: center;">
+                            <span class="badge {% if provider.confidence >= 0.95 %}badge-green{% elif provider.confidence >= 0.90 %}badge-yellow{% else %}badge-gray{% endif %}">
+                                {{ (provider.confidence * 100)|int }}%
+                            </span>
+                        </td>
+                        <td style="padding: 0.75rem; text-align: center;">
+                            <span class="badge {% if provider.matched_by == 'llm' %}badge-blue{% else %}badge-purple{% endif %}">
+                                {{ provider.matched_by }}
+                            </span>
+                        </td>
+                        <td style="padding: 0.75rem; text-align: right;">
+                            <a href="/models/{{ provider.id }}" class="btn-sm" style="background: #3b82f6;">View Details</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function showSuspectedMatches() {
+    const response = await fetch(`/api/canonical-models/{{ canonical.id }}/suspected-matches?limit=10`);
+    const data = await response.json();
+    
+    if (data.error) {
+        alert('Error: ' + data.error);
+        return;
+    }
+    
+    if (data.suspects.length === 0) {
+        alert('✓ No suspected matches found. All similar models are already matched.');
+        return;
+    }
+    
+    let message = `Found ${data.suspects.length} potential matches:\n\n`;
+    data.suspects.forEach((suspect, idx) => {
+        message += `${idx + 1}. ${suspect.name} (${suspect.provider}) - ${(suspect.confidence * 100).toFixed(0)}% match\n`;
+        message += `   ${suspect.reasoning}\n\n`;
+    });
+    
+    alert(message);
+    // Optionally redirect to canonical models page where the modal can show
+    window.location.href = '/canonical-models';
+}
+</script>
+
+<style>
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.badge-blue {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-green {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.badge-yellow {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.badge-gray {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+.badge-purple {
+    background: #ede9fe;
+    color: #6b21a8;
+}
+
+.btn {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn:hover {
+    background: #1d4ed8;
+}
+
+.btn-sm {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.4rem 0.9rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 0.875rem;
+}
+
+.btn-sm:hover {
+    background: #1d4ed8;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+tbody tr:hover {
+    background: #f9fafb !important;
+}
+</style>
+{% endblock %}
