@@ -2865,123 +2865,69 @@ def api_search_model():
     session = get_session()
     
     try:
+        from rapidfuzz import fuzz
+        
         name = request.args.get('name', '').strip()
         
         if not name:
             return jsonify({'error': 'Model name is required'}), 400
         
-        # Normalize search query for better matching
-        # Remove common separators and convert to lowercase
-        def normalize_text(text):
-            if not text:
-                return ''
-            return text.lower().replace('-', '').replace('_', '').replace('.', '').replace(' ', '')
-        
-        search_normalized = normalize_text(name)
-        
-        # Get all models and filter in Python for better matching
-        # This allows flexible string matching that SQL can't easily do
+        # Get all models
         all_models = session.query(AIModel).all()
         
-        matched_models = []
-        for model in all_models:
-            # Check multiple match criteria
-            name_lower = (model.name or '').lower()
-            model_id_lower = (model.model_id or '').lower()
-            description_lower = (model.description or '').lower()
-            tags_list = model.tags if isinstance(model.tags, list) else []
-            tags_lower = ' '.join(tags_list).lower()
-            
-            name_normalized = normalize_text(model.name)
-            model_id_normalized = normalize_text(model.model_id)
-            description_normalized = normalize_text(model.description)
-            
-            search_lower = name.lower()
-            
-            # Split search into words for better matching
-            search_words = [w.strip() for w in search_lower.split() if w.strip()]
-            search_words_normalized = [normalize_text(w) for w in search_words]
-            
-            # Calculate match score for ranking
-            score = 0
-            
-            # Exact phrase matches (highest priority)
-            if search_lower in name_lower:
-                score += 100
-            if search_lower in model_id_lower:
-                score += 90
-            if search_lower in description_lower:
-                score += 30
-            if search_lower in tags_lower:
-                score += 40
-            
-            # Normalized phrase matches
-            if search_normalized in name_normalized:
-                score += 80
-            if search_normalized in model_id_normalized:
-                score += 70
-            if search_normalized in description_normalized:
-                score += 25
-            
-            # Word-by-word matching
-            name_word_matches = sum(1 for word in search_words if word in name_lower)
-            model_id_word_matches = sum(1 for word in search_words if word in model_id_lower)
-            description_word_matches = sum(1 for word in search_words if word in description_lower)
-            tags_word_matches = sum(1 for word in search_words if word in tags_lower)
-            
-            # Normalized word matching
-            name_norm_word_matches = sum(1 for word in search_words_normalized if word in name_normalized)
-            model_id_norm_word_matches = sum(1 for word in search_words_normalized if word in model_id_normalized)
-            description_norm_word_matches = sum(1 for word in search_words_normalized if word in description_normalized)
-            
-            # All words present (perfect match)
-            if name_word_matches == len(search_words):
-                score += 60
-            elif name_word_matches > 0:
-                score += name_word_matches * 15
-            
-            if model_id_word_matches == len(search_words):
-                score += 50
-            elif model_id_word_matches > 0:
-                score += model_id_word_matches * 12
-            
-            if description_word_matches == len(search_words):
-                score += 20
-            elif description_word_matches > 0:
-                score += description_word_matches * 5
-            
-            if tags_word_matches > 0:
-                score += tags_word_matches * 8
-            
-            # Normalized word matches
-            if name_norm_word_matches > 0:
-                score += name_norm_word_matches * 10
-            if model_id_norm_word_matches > 0:
-                score += model_id_norm_word_matches * 8
-            if description_norm_word_matches > 0:
-                score += description_norm_word_matches * 3
-            
-            # Fuzzy similarity check (for partial word matches)
-            for word in search_words:
-                if len(word) >= 3:  # Only for words 3+ chars
-                    # Check if word is a substring of any word in name/model_id
-                    name_words = name_lower.split()
-                    model_id_words = model_id_lower.split()
-                    
-                    for nw in name_words:
-                        if word in nw or nw in word:
-                            score += 5
-                    for mw in model_id_words:
-                        if word in mw or mw in word:
-                            score += 4
-            
-            # If we have any match, add to results
-            if score > 0:
-                matched_models.append((model, score))
+        if not all_models:
+            return jsonify({
+                'success': True,
+                'query': name,
+                'total_found': 0,
+                'models': [],
+                'cheapest': None,
+                'message': 'No models in database'
+            })
         
-        # Sort by score (highest first) and extract models
-        matched_models.sort(key=lambda x: x[1], reverse=True)
-        models = [m[0] for m in matched_models]
+        # Prepare search strings for each model
+        model_search_data = []
+        for model in all_models:
+            # Combine name, model_id, and description for searching
+            search_text = f"{model.name or ''} {model.model_id or ''} {model.description or ''}".strip()
+            model_search_data.append({
+                'model': model,
+                'search_text': search_text,
+                'name': model.name or '',
+                'model_id': model.model_id or ''
+            })
+        
+        # Use rapidfuzz to find best matches
+        # We'll search against name, model_id, and combined text
+        matched_results = []
+        
+        for data in model_search_data:
+            # Calculate multiple similarity scores
+            name_score = fuzz.partial_ratio(name.lower(), data['name'].lower())
+            model_id_score = fuzz.partial_ratio(name.lower(), data['model_id'].lower())
+            combined_score = fuzz.partial_ratio(name.lower(), data['search_text'].lower())
+            token_sort_score = fuzz.token_sort_ratio(name.lower(), data['name'].lower())
+            token_set_score = fuzz.token_set_ratio(name.lower(), data['search_text'].lower())
+            
+            # Calculate weighted score
+            # Prioritize exact matches in name and model_id
+            max_score = max(name_score, model_id_score, combined_score, token_sort_score, token_set_score)
+            weighted_score = (name_score * 1.5 + model_id_score * 1.3 + combined_score + 
+                            token_sort_score * 1.2 + token_set_score * 0.8) / 5.8
+            
+            # Use a threshold to filter out poor matches
+            if max_score >= 60:  # Only include decent matches
+                matched_results.append({
+                    'model': data['model'],
+                    'score': weighted_score,
+                    'max_score': max_score
+                })
+        
+        # Sort by weighted score descending
+        matched_results.sort(key=lambda x: (x['score'], x['max_score']), reverse=True)
+        
+        # Extract top matches
+        models = [r['model'] for r in matched_results]
         
         if not models:
             return jsonify({
