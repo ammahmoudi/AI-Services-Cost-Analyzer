@@ -321,6 +321,18 @@
     <div class="tab-content" id="maintenance-tab">
         <h3 class="section-title">Database Maintenance</h3>
         
+        <div class="card" style="background: #fef3c7; border: 1px solid #f59e0b; margin-bottom: 1rem;">
+            <h4 style="margin-top: 0; color: #92400e;">⚠️ Run Migration 011</h4>
+            <p class="help-text" style="margin-bottom: 1rem; color: #92400e;">
+                If you're seeing errors about "column purpose does not exist", click this button to add the missing column.
+                This is a one-time migration.
+            </p>
+            <button type="button" class="btn" style="background: #f59e0b; color: white;" onclick="runMigration011()">
+                🔧 Run Migration 011
+            </button>
+            <div id="migration-result" style="margin-top: 1rem;"></div>
+        </div>
+        
         <div class="card">
             <h4 style="margin-top: 0;">Parse Model Names</h4>
             <p class="help-text" style="margin-bottom: 1rem;">
@@ -429,6 +441,42 @@
                 
                 html += '</div>';
                 resultDiv.innerHTML = html;
+            } else {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>✗ Error:</strong> ${data.error}
+                    </div>
+                `;
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <strong>✗ Error:</strong> ${error.message}
+                </div>
+            `;
+        }
+    }
+    
+    // Run Migration 011
+    async function runMigration011() {
+        const resultDiv = document.getElementById('migration-result');
+        resultDiv.innerHTML = '<p style="color: #3b82f6;">🔧 Running migration...</p>';
+        
+        try {
+            const response = await fetch('/api/run-migration-011', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <strong>✓ Success!</strong> ${data.message}
+                        <p style="margin-top: 0.5rem;">You can now reload the page.</p>
+                    </div>
+                `;
             } else {
                 resultDiv.innerHTML = `
                     <div class="alert alert-danger">

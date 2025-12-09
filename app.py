@@ -861,6 +861,47 @@ def remove_duplicate_models(source_id):
         close_session()
 
 
+@app.route('/api/run-migration-011', methods=['POST'])
+def run_migration_011():
+    """Run migration 011 to add purpose column"""
+    session = get_session()
+    
+    try:
+        from sqlalchemy import text
+        
+        # Run the migration
+        session.execute(text("""
+            DO $$ 
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name='llm_configurations' AND column_name='purpose'
+                ) THEN
+                    ALTER TABLE llm_configurations 
+                    ADD COLUMN purpose VARCHAR(50) DEFAULT 'extraction';
+                END IF;
+            END $$;
+        """))
+        
+        session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Migration 011 completed successfully'
+        })
+        
+    except Exception as e:
+        session.rollback()
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'trace': traceback.format_exc()
+        }), 500
+    finally:
+        close_session()
+
+
 @app.route('/api/parse-all-models', methods=['POST'])
 def parse_all_models():
     """Parse all existing models to populate parsed name components"""
