@@ -289,30 +289,44 @@ Model Type: {model_type}
 Models to analyze:
 {json.dumps(model_summaries, indent=2)}
 
-MATCHING RULES:
-1. **Ignore formatting variations**: "flux-1.1-pro", "FLUX1.1 [pro]", "Flux 1.1 Pro", "flux_1_1_pro" are ALL the same
-2. **Version MUST match exactly**: "FLUX 1.1" ≠ "FLUX 1.0", "GPT-4o" ≠ "GPT-4"
-3. **Edition/variant MUST match**: "Pro" ≠ "Dev" ≠ "Schnell", "Turbo" ≠ "Standard"
-4. **Base model name must be the same**: "FLUX" = "Flux", "Claude" = "claude"
-5. **Provider names don't matter**: Same model from Replicate, FAL, Runware, etc. should be matched
+CRITICAL MATCHING RULES (MUST FOLLOW):
+1. **Check descriptions for true identity**: Sometimes different names refer to the same model (e.g., "Nano Banana Pro" may use "Gemini 3 Pro" in description)
+2. **Ignore formatting variations**: "flux-1.1-pro", "FLUX1.1 [pro]", "Flux 1.1 Pro", "flux_1_1_pro" are ALL the same
+3. **Version MUST match exactly**: "FLUX 1.1" ≠ "FLUX 1.0", "GPT-4o" ≠ "GPT-4", "Wan 2.2" ≠ "Wan 2.5"
+4. **Edition/variant MUST match**: "Pro" ≠ "Dev" ≠ "Schnell", "Turbo" ≠ "Standard"
+5. **Functional suffixes create DIFFERENT models**:
+   - "Wan 2.2" ≠ "Wan 2.2 Animate" ≠ "Wan 2.2 Vace" (different capabilities)
+   - "Flux Dev" ≠ "Flux Dev Redux" ≠ "Flux Dev LoRA" (different features)
+   - "Imagen 3" ≠ "Imagen 3 Fast" (different speed variants)
+   - "Veo 2" ≠ "Veo 2 Image to Video" (different input types)
+6. **Capability modifiers create DIFFERENT models**:
+   - "Image to Image" ≠ "Text to Image" ≠ "Inpaint" ≠ "Outpaint"
+   - "ControlNet", "LoRA", "Redux", "Depth", "Canny" are distinct variants
+7. **Provider names don't matter**: Same model from Replicate, FAL, Runware, etc. should be matched
+8. **BE CONSERVATIVE**: When in doubt, DON'T match. Only match if you're very confident they're identical.
 
-Positive Examples:
-✅ "BFL flux-1.1-pro" + "FLUX1.1 [pro]" + "Flux 1.1 Pro (Replicate)" → MATCH (all are Flux 1.1 Pro)
-✅ "Kling 1.6 Standard" + "kling-1-6-standard" + "Kling 1.6 Standard (Runware)" → MATCH
-✅ "Claude 3.5 Sonnet" + "anthropic/claude-3.5-sonnet" + "claude-3-5-sonnet-20241022" → MATCH
-✅ "Stable Diffusion XL" + "SDXL" + "stable-diffusion-xl-1024-v1-0" → MATCH
+Positive Examples (SAFE TO MATCH):
+✅ "BFL flux-1.1-pro" + "FLUX1.1 [pro]" + "Flux 1.1 Pro (Replicate)" → MATCH (exact same model, just formatting)
+✅ "Kling 1.6 Standard" + "kling-1-6-standard" + "Kling 1.6 Standard (Runware)" → MATCH (same version and variant)
+✅ "Claude 3.5 Sonnet" + "anthropic/claude-3.5-sonnet" + "claude-3-5-sonnet-20241022" → MATCH (date suffix OK)
+✅ "Stable Diffusion XL" + "SDXL" + "stable-diffusion-xl-1024-v1-0" → MATCH (SDXL is common abbreviation)
+✅ "Nano Banana Pro" + "Gemini 3 Pro Image Preview" → MATCH if description reveals both use "Gemini 3 Pro"
 
-Negative Examples:
-❌ "FLUX 1.1 Pro" + "FLUX 1.1 Dev" → NO MATCH (different editions)
-❌ "FLUX 1.1" + "FLUX 1.0" → NO MATCH (different versions)
-❌ "GPT-4o" + "GPT-4o-mini" → NO MATCH (mini is a different model)
-❌ "Claude 3.5 Sonnet" + "Claude 3 Opus" → NO MATCH (different models)
+Negative Examples (DO NOT MATCH):
+❌ "FLUX 1.1 Pro" + "FLUX 1.1 Dev" → NO MATCH (Pro vs Dev are different editions)
+❌ "FLUX Dev" + "FLUX Dev Redux" → NO MATCH (Redux is a different feature variant)
+❌ "Wan 2.2" + "Wan 2.2 Animate" → NO MATCH (Animate adds animation capabilities)
+❌ "Wan 2.2 Vace Depth" + "Wan 2.2 Vace Pose" → NO MATCH (Depth vs Pose are different)
+❌ "Imagen 3" + "Imagen 3 Fast" → NO MATCH (Fast is a speed-optimized variant)
+❌ "Veo 3.1 Text to Video" + "Veo 3.1 Image to Video" → NO MATCH (different input types)
+❌ "Flux ControlNet" + "Flux LoRA" → NO MATCH (different control methods)
+❌ "GPT-4o" + "GPT-4o-mini" → NO MATCH (mini is smaller model)
 
 OUTPUT FORMAT:
 Return a JSON array of match groups. Each group represents models that are identical.
 If NO matches found, return empty array: []
 
-Example: [{{"canonical_name": "flux-1-1-pro", "indices": [0, 3, 7], "confidence": 0.95, "reasoning": "All three are Flux 1.1 Pro with formatting variations"}}]
+Example: [{{"canonical_name": "flux-1-1-pro", "indices": [0, 3, 7], "confidence": 0.95, "reasoning": "All three are Flux 1.1 Pro with only formatting variations"}}]
 
 REQUIREMENTS:
 - Only group if at least 2 models match
@@ -320,8 +334,9 @@ REQUIREMENTS:
 - canonical_name should be a clean, standardized version of the model name
 - Include clear reasoning for each match
 - Use the 'index' field from each model object above (NOT the array position)
+- BE CONSERVATIVE: Only match if models are truly identical (same version, edition, and capabilities)
 
-Analyze the models above and identify ALL matching groups:
+Analyze the models above and identify matching groups (only if certain they're identical):
 """
         try:
             llm_client = LLMClient(self.config)
