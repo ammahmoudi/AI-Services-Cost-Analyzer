@@ -35,7 +35,8 @@ KNOWN_COMPANIES = {
     'fofr', 'pseudoram', 'smoretalk', 'clarityai', 'simalabs', 'perceptron',
     'isaac', 'zai', 'z.ai', 'sourceful', 'imagineart', 'leonardo', 'dreamshaper',
     'lykon', 'servicenow', 'apriel', 'resemble', 'argil', 'mirelo', 'moonvalley',
-    'marey', 'creatify', 'groq', 'llama', 'typhoon', 'qwq', 'qvq', 'kimi'
+    'marey', 'creatify', 'groq', 'llama', 'typhoon', 'qwq', 'qvq', 'kimi',
+    'civitai', 'dataforseo', 'baai', 'byteplus'
 }
 
 # Known model families
@@ -103,7 +104,7 @@ FAMILY_TO_COMPANY = {
     'dalle': 'OpenAI',
     'sora': 'OpenAI',
     'whisper': 'OpenAI',
-    'flux': 'BFL',
+    'flux': 'Fal',
     'stable-diffusion': 'Stability',
     'sd': 'Stability',
     'sdxl': 'Stability',
@@ -113,12 +114,13 @@ FAMILY_TO_COMPANY = {
     'seedream': 'Bytedance',
     'seededit': 'Bytedance',
     'lynx': 'Bytedance',
+    'omnihuman': 'Bytedance',
     'hunyuan': 'Tencent',
     'hunyuan3d': 'Tencent',
     'cogvideo': 'Tencent',
     'cogview': 'Tencent',
-    'minimax': 'MiniMax',
-    'hailuo': 'MiniMax',
+    'minimax': 'Minimax',
+    'hailuo': 'Minimax',
     'kimi': 'Moonshot',
     'moonshot': 'Moonshot',
     'wan': 'Alibaba',
@@ -137,6 +139,7 @@ FAMILY_TO_COMPANY = {
     'juggernaut': 'Juggernaut',
     'mochi': 'Genmo',
     'ltx': 'Lightricks',
+    'magi': 'Google',
     'fabric': 'Veed',
     'pixverse': 'Pixverse',
     'vidu': 'Vidu',
@@ -173,7 +176,12 @@ FAMILY_TO_COMPANY = {
     'wonder3d': 'Wonder3D',
     'cogito': 'DeepCogito',
     'apriel': 'ServiceNow',
-    'marin': 'Marin'
+    'marin': 'Marin',
+    'chatterbox': 'Resemble',
+    'auraflow': 'Fal',
+    'bagel': 'Fal',
+    'cartoonify': 'Fal',
+    'csm': 'Fal'
 }
 
 # Known size indicators - exclude 'ultra' and similar variant-like words
@@ -275,6 +283,13 @@ class ModelNameParser:
             r'\b(' + '|'.join(re.escape(m) for m in KNOWN_MODEL_FAMILIES) + r')\b',
             re.IGNORECASE
         )
+        
+        # Model ID prefix patterns (company/model or company-model)
+        self.model_id_company_patterns = [
+            (r'^([a-zA-Z][a-zA-Z0-9._-]*)/.*', 'slash'),  # anthropic/claude, black-forest-labs/flux
+            (r'^runware-([a-zA-Z][a-zA-Z0-9]*)-.*', 'runware'),  # runware-bfl-1-1
+            (r'^([a-zA-Z][a-zA-Z0-9]*)-([a-zA-Z][a-zA-Z0-9]*)-.*', 'dash_prefix'),  # bytedance-seedance
+        ]
     
     def parse(self, name: str, model_id: Optional[str] = None) -> ParsedModelName:
         """
@@ -299,11 +314,11 @@ class ModelNameParser:
         result.version = self._extract_version(combined)
         result.full_version = self._extract_full_version(combined)
         
-        # Extract company
-        result.company = self._extract_company(combined)
+        # Extract company (pass model_id for prefix detection)
+        result.company = self._extract_company(combined, model_id or '')
         
         # Extract model family
-        result.model_family = self._extract_model_family(combined)
+        result.model_family = self._extract_model_family(combined, model_id or '')
         
         # Infer company from family if not found
         if not result.company and result.model_family:
@@ -324,25 +339,54 @@ class ModelNameParser:
         return result
     
     def _extract_version(self, text: str) -> Optional[str]:
-        """Extract version number, prioritizing decimal versions."""
-        # Look for decimal versions first (1.1, 3.5, 2.0) even when stuck to words (e.g., FLUX1.1)
-        decimal_match = re.search(r'(?<!\d)(\d+\.\d+)', text)
+        """Extract version number, prioritizing decimal versions and filtering false positives."""
+        # Look for decimal versions first (1.1, 3.5, 2.0)
+        decimal_match = re.search(r'(?<!\d)(\d+\.\d+)(?!\d)', text)
         if decimal_match:
-            return decimal_match.group(1)
+            version = decimal_match.group(1)
+            # Filter out years (2024.0, 2025.5, etc.)
+            if float(version) < 100:  # Reasonable version numbers are < 100
+                return version
         
         # Flux-specific fused patterns like "flux1.1", "flux-1", "flux.1"
         flux_match = re.search(r'flux[\s\._-]*([0-9]+(?:\.[0-9]+)?)', text, re.IGNORECASE)
         if flux_match:
             return flux_match.group(1)
 
-        # Look for single digit versions (but be careful with sizes like "8B")
-        # Only match if followed by whitespace or end, not "B" or "M"
-        single_match = re.search(r'(?<!\d)(\d{1,2})(?!\.\d)(?![BMbm])', text)
+        # Look for v-prefixed versions (v1, v2, v3.5) - most reliable
+        v_match = re.search(r'\bv(\d{1,2}(?:\.\d+)?)\b', text, re.IGNORECASE)
+        if v_match:
+            return v_match.group(1)
+
+        # Look for single/double digit versions, but avoid:
+        # - Years (2024, 2025, 20240620)
+        # - Dates (01-25, 240620)
+        # - Model IDs (civitai-101055, runware-bfl-1-1)
+        # - Long numbers (101055, 128078)
+        # Only match if:
+        # 1. Not in runware-{company}-{num} pattern
+        # 2. Not followed by more digits (years/dates)
+        # 3. Not part of civitai ID pattern
+        # 4. Reasonable range (1-20)
+        
+        # Skip if it's a runware model ID pattern
+        if re.search(r'runware-[a-z]+-\d', text, re.IGNORECASE):
+            return None
+        
+        # Skip if it's a civitai pattern
+        if re.search(r'civitai-\d', text, re.IGNORECASE):
+            return None
+        
+        # Look for isolated single/double digit (space/dash separated, reasonable range)
+        single_match = re.search(r'(?<![\d-])(\d{1,2})(?![\d-])(?![BMbm])', text)
         if single_match:
             version = single_match.group(1)
-            # Filter out obvious non-versions (like years, large numbers)
-            if len(version) <= 2 and int(version) < 30:
-                return version
+            version_num = int(version)
+            # Only accept 1-20 as version (filters out years, dates, large IDs)
+            if 1 <= version_num <= 20:
+                # Additional check: not part of a date pattern (YYYY-MM-DD, MM-DD)
+                if not re.search(r'\d{2,4}[-/]' + version + r'[-/]\d{2,4}', text):
+                    return version
         
         return None
     
@@ -353,12 +397,118 @@ class ModelNameParser:
             return match.group(1)
         return None
     
-    def _extract_company(self, text: str) -> Optional[str]:
-        """Extract company/provider name - tries exact match first, then partial."""
+    def _extract_company(self, text: str, model_id: str = '') -> Optional[str]:
+        """Extract company/provider name from text and model_id, ignoring API provider prefixes."""
         text_lower = text.lower()
+        model_id_lower = model_id.lower()
         
-        # Exact word match first
-        match = self.company_pattern.search(text)
+        # IMPORTANT: Provider prefixes like 'fal-ai/', 'anthropic/', 'cohere/' are API providers,
+        # NOT the model company. We need to look at the model name itself or after the prefix.
+        
+        # Clean model_id: Remove common API provider prefixes to get actual model identifier
+        api_providers = ['fal-ai/', 'together/', 'replicate/', 'openrouter/', 'huggingface/']
+        cleaned_model_id = model_id_lower
+        for provider in api_providers:
+            if cleaned_model_id.startswith(provider):
+                cleaned_model_id = cleaned_model_id[len(provider):]
+                break
+        
+        # Special case: runware-{company}-* pattern (runware is provider, but pattern indicates company)
+        if model_id_lower.startswith('runware-'):
+            runware_match = re.match(r'^runware-([a-zA-Z][a-zA-Z0-9]*)-', model_id_lower)
+            if runware_match:
+                company = runware_match.group(1)
+                if company in ['bfl', 'black-forest-labs']:
+                    return 'BFL'
+                if company == 'bytedance':
+                    return 'Bytedance'
+                if company == 'bria':
+                    return 'Bria'
+                if company == 'civitai':
+                    return 'Civitai'
+                # Check if it's a known company
+                if company in [c.lower() for c in KNOWN_COMPANIES]:
+                    return company.title()
+        
+        # For model_ids like 'company/model' or 'company-model' (AFTER removing provider prefix)
+        # This handles cases like anthropic/claude, black-forest-labs/flux in OpenRouter
+        if cleaned_model_id != model_id_lower:  # Had a provider prefix removed
+            # Check for company/model pattern
+            slash_match = re.match(r'^([a-zA-Z][a-zA-Z0-9._-]+)/', cleaned_model_id)
+            if slash_match:
+                company = slash_match.group(1).replace('-', ' ').replace('_', ' ')
+                if company in ['black forest labs', 'blackforestlabs']:
+                    return 'BFL'
+                if company == 'stabilityai':
+                    return 'Stability'
+                if company == 'anthropic':
+                    return 'Anthropic'
+                if company == 'cohere':
+                    return 'Cohere'
+                if company in [c.lower() for c in KNOWN_COMPANIES]:
+                    return company.title()
+        
+        # Check cleaned model_id for company-model pattern (e.g., bytedance-seedance, alibaba-qwen)
+        dash_match = re.match(r'^([a-zA-Z][a-zA-Z0-9]+)-([a-zA-Z][a-zA-Z0-9]+)', cleaned_model_id)
+        if dash_match:
+            potential_company = dash_match.group(1)
+            # Check if first part is a known company
+            if potential_company in [c.lower() for c in KNOWN_COMPANIES]:
+                if potential_company == 'bytedance':
+                    return 'Bytedance'
+                if potential_company == 'alibaba':
+                    return 'Alibaba'
+                return potential_company.title()
+        
+        # Exact word match in combined text (name + cleaned model_id)
+        combined_text = f"{text} {cleaned_model_id}"
+        match = self.company_pattern.search(combined_text)
+        if match:
+            company = match.group(1).lower()
+            # Normalize variations
+            if company in ['black-forest-labs', 'black forest labs']:
+                return 'BFL'
+            if company == 'stabilityai':
+                return 'Stability'
+            if company == 'qwen':
+                return 'Alibaba'
+            if company == 'bytedance':
+                return 'Bytedance'
+            if company == 'anthropic':
+                return 'Anthropic'
+            if company == 'cohere':
+                return 'Cohere'
+            return company.title()
+        
+        # Check if model NAME starts with a company name (e.g., "Alibaba qwen3-32b", "Anthropic claude-4")
+        # This handles cases where the display name includes the company
+        name_parts = text.split()
+        if name_parts:
+            first_word = name_parts[0].lower()
+            if first_word in [c.lower() for c in KNOWN_COMPANIES]:
+                if first_word == 'alibaba':
+                    return 'Alibaba'
+                if first_word == 'anthropic':
+                    return 'Anthropic'
+                if first_word == 'cohere':
+                    return 'Cohere'
+                if first_word == 'bytedance':
+                    return 'Bytedance'
+                if first_word == 'bfl':
+                    return 'BFL'
+                if first_word in ['google', 'gemini']:
+                    return 'Google'
+                if first_word == 'microsoft':
+                    return 'Microsoft'
+                if first_word == 'meta':
+                    return 'Meta'
+                if first_word == 'openai':
+                    return 'OpenAI'
+                if first_word == 'mistral':
+                    return 'Mistral'
+                if first_word == 'deepseek':
+                    return 'DeepSeek'
+                return first_word.title()
         if match:
             company = match.group(1).lower()
             # Normalize variations
@@ -370,10 +520,9 @@ class ModelNameParser:
                 return 'Alibaba'
             return company.title()
         
-        # Try partial matching for known companies (e.g., "klingai" matches "klingai")
-        for known_company in sorted(KNOWN_COMPANIES, key=len, reverse=True):  # Longest first
+        # Try partial matching for known companies
+        for known_company in sorted(KNOWN_COMPANIES, key=len, reverse=True):
             if known_company in text_lower:
-                # Avoid matching parts of other words (e.g., "openai" in "openai-gpt")
                 if re.search(r'\b' + re.escape(known_company) + r'\b', text_lower, re.IGNORECASE):
                     company = known_company.lower()
                     if company == 'qwen':
@@ -388,12 +537,26 @@ class ModelNameParser:
         
         return None
     
-    def _extract_model_family(self, text: str) -> Optional[str]:
+    def _extract_model_family(self, text: str, model_id: str = '') -> Optional[str]:
         """Extract model family name - tries exact match first, then partial."""
         text_lower = text.lower()
+        model_id_lower = model_id.lower()
         
-        # Exact word match first
-        match = self.model_family_pattern.search(text)
+        # Clean model_id: Remove API provider prefixes to get actual model identifier
+        api_providers = ['fal-ai/', 'together/', 'replicate/', 'openrouter/', 'huggingface/']
+        cleaned_model_id = model_id_lower
+        for provider in api_providers:
+            if cleaned_model_id.startswith(provider):
+                cleaned_model_id = cleaned_model_id[len(provider):]
+                break
+        
+        # Also remove runware prefix when looking for family
+        if cleaned_model_id.startswith('runware-'):
+            cleaned_model_id = cleaned_model_id.replace('runware-', '', 1)
+        
+        # Exact word match first (check both text and cleaned model_id)
+        combined_for_family = f"{text} {cleaned_model_id}"
+        match = self.model_family_pattern.search(combined_for_family)
         if match:
             family = match.group(1).lower()
             # Normalize variations
@@ -403,13 +566,17 @@ class ModelNameParser:
                 return 'Kling'
             if family == 'flux':
                 return 'Flux'
+            if family == 'claude':
+                return 'Claude'
+            if family in ['seedance', 'seedream', 'seededit']:
+                return family.title()
             return family.title()
         
-        # Try partial matching for known families (e.g., "flux" in "FLUX1.1")
-        for known_family in sorted(KNOWN_MODEL_FAMILIES, key=len, reverse=True):  # Longest first
-            if known_family in text_lower:
-                # Avoid matching parts of other words
-                if re.search(r'\b' + re.escape(known_family) + r'\b', text_lower, re.IGNORECASE):
+        # Try partial matching for known families
+        for known_family in sorted(KNOWN_MODEL_FAMILIES, key=len, reverse=True):
+            if known_family in text_lower or known_family in cleaned_model_id:
+                # Check in combined text
+                if re.search(r'\b' + re.escape(known_family) + r'\b', combined_for_family, re.IGNORECASE):
                     family = known_family.lower()
                     if family == 'sd':
                         return 'Stable-Diffusion'
@@ -417,6 +584,8 @@ class ModelNameParser:
                         return 'Kling'
                     if family == 'flux':
                         return 'Flux'
+                    if family == 'claude':
+                        return 'Claude'
                     return family.title()
         
         return None
