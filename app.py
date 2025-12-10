@@ -3022,13 +3022,43 @@ def api_search_model():
         # Prepare search strings for each model
         model_search_data = []
         for model in all_models:
-            # Combine name, model_id, and description for searching
-            search_text = f"{model.name or ''} {model.model_id or ''} {model.description or ''}".strip()
+            # Combine all searchable fields including parsed components
+            search_text_parts = [
+                str(model.name or ''),
+                str(model.model_id or ''),
+                str(model.description or ''),
+                str(model.parsed_company or ''),
+                str(model.parsed_model_family or ''),
+                str(model.parsed_version or ''),
+                str(model.parsed_size or ''),
+            ]
+            
+            # Add variants and modes (JSON arrays)
+            try:
+                variants = model.parsed_variants or []
+                if isinstance(variants, list):
+                    search_text_parts.extend([str(v) for v in variants if v])
+            except Exception:
+                pass
+                
+            try:
+                modes = model.parsed_modes or []
+                if isinstance(modes, list):
+                    search_text_parts.extend([str(m) for m in modes if m])
+            except Exception:
+                pass
+            
+            search_text = ' '.join(p for p in search_text_parts if p and p != 'None')
+            
             model_search_data.append({
                 'model': model,
                 'search_text': search_text,
                 'name': model.name or '',
-                'model_id': model.model_id or ''
+                'model_id': model.model_id or '',
+                'parsed_company': model.parsed_company or '',
+                'parsed_family': model.parsed_model_family or '',
+                'parsed_version': model.parsed_version or '',
+                'parsed_size': model.parsed_size or '',
             })
         
         # Use rapidfuzz to find best matches
@@ -3306,12 +3336,20 @@ def fallback_semantic_search(query, all_models):
     cheapest_price = float('inf')
     
     for model in matched_models:
+        # Safely access source to avoid lazy loading errors
+        try:
+            provider_name = model.source.name if model.source else 'Unknown'
+            provider_id = model.source.id if model.source else None
+        except Exception:
+            provider_name = 'Unknown'
+            provider_id = None
+        
         model_data = {
             'id': model.id,
             'name': model.name,
             'model_id': model.model_id,
-            'provider': model.source.name if model.source else 'Unknown',
-            'provider_id': model.source.id if model.source else None,
+            'provider': provider_name,
+            'provider_id': provider_id,
             'model_type': model.model_type,
             'cost_per_call': model.cost_per_call,
             'pricing_type': model.pricing_type,
@@ -3426,8 +3464,8 @@ Important: Return ONLY the JSON array, no other text."""
 
         response = ""
         try:
-            # Call LLM
-            response = llm_client.generate(prompt, max_tokens=200)
+            # Call LLM using the correct chat method
+            response = llm_client.chat(prompt, temperature=0.1, max_tokens=500)
             
             # Parse LLM response
             # Extract JSON array from response
