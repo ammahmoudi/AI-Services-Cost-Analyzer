@@ -343,7 +343,7 @@ MODE_KEYWORDS = {
     'reframe', 'depth', 'pose', 'canny', 'effects', 'elements', 'transition',
     'lipsync', 'avatar', 'animate', 'stylize', 'transfer', 'removal', 'replace',
     'background', 'segment', 'detect', 'caption', 'grounding', 'generation',
-    'trainer', 'training', 'turbo', 'fast', 'pro', 'standard', 'lite'
+    'trainer', 'training'
 }
 
 
@@ -455,9 +455,9 @@ class ModelNameParser:
         # Extract size
         result.size = self._extract_size(combined)
         
-        # Extract variants and modes
+        # Extract variants and modes (pass model_id for better mode detection)
         result.variants = self._extract_variants(combined)
-        result.modes = self._extract_modes(combined)
+        result.modes = self._extract_modes(combined, model_id or '')
         
         # Extract all significant tokens
         result.tokens = self._extract_tokens(combined)
@@ -676,13 +676,47 @@ class ModelNameParser:
                 variants.append(keyword.title())
         return variants
     
-    def _extract_modes(self, text: str) -> List[str]:
-        """Extract mode keywords (for image generation)."""
+    def _extract_modes(self, text: str, model_id: str = '') -> List[str]:
+        """Extract mode keywords (for image generation, video, etc.)."""
         modes = []
         text_lower = text.lower()
+        
+        # First, extract from model_id path (e.g., fal-ai/wan/v2.2-5b/text-to-video)
+        if model_id:
+            model_id_lower = model_id.lower()
+            
+            # Remove API provider prefixes
+            api_providers = ['fal-ai/', 'together/', 'replicate/', 'openrouter/', 'huggingface/']
+            cleaned_model_id = model_id_lower
+            for provider in api_providers:
+                if cleaned_model_id.startswith(provider):
+                    cleaned_model_id = cleaned_model_id[len(provider):]
+                    break
+            
+            # Look for modes in the path (e.g., /text-to-video, /image-to-image)
+            for keyword in MODE_KEYWORDS:
+                if keyword in cleaned_model_id:
+                    # Check if it's part of a path segment (after a slash)
+                    if '/' + keyword in cleaned_model_id or cleaned_model_id.startswith(keyword):
+                        mode_title = keyword.title()
+                        # Special handling for hyphenated modes
+                        if '-to-' in keyword:
+                            parts = keyword.split('-')
+                            mode_title = '-'.join(p.capitalize() for p in parts)
+                        if mode_title not in modes:
+                            modes.append(mode_title)
+        
+        # Then extract from display name/text
         for keyword in MODE_KEYWORDS:
             if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
-                modes.append(keyword.title())
+                mode_title = keyword.title()
+                # Special handling for hyphenated modes
+                if '-to-' in keyword:
+                    parts = keyword.split('-')
+                    mode_title = '-'.join(p.capitalize() for p in parts)
+                if mode_title not in modes:
+                    modes.append(mode_title)
+        
         return modes
     
     def _extract_tokens(self, text: str) -> Set[str]:
