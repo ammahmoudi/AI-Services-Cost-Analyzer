@@ -3071,16 +3071,17 @@ def api_search_model():
         search_lower = name.lower()
         
         # Extract version numbers from search - prioritize decimals (1.1, 2.0)
-        # Match patterns: 1.1, 2.0, v1.1, etc. - prefer decimal versions
-        decimal_versions = re.findall(r'\b(\d+\.\d+)\b', name)
+        # Use flexible pattern without strict word boundaries to match "flux1.1" style
+        decimal_versions = re.findall(r'(?<!\d)(\d+\.\d+)(?!\d)', name)
         if decimal_versions:
             search_versions = decimal_versions
         else:
             # Only extract single-digit versions if no decimal versions found
-            search_versions = re.findall(r'\b(\d+)\b', name)
+            search_versions = re.findall(r'(?<!\d)(\d+)(?!\d)', name)
         
         print(f"DEBUG: Search query: '{name}'")
         print(f"DEBUG: Extracted search versions: {search_versions}")
+        print(f"DEBUG: Total models to search: {len(model_search_data)}")
         
         # Helper function to extract tokens with better handling of concatenated text
         def extract_tokens(text):
@@ -3108,22 +3109,24 @@ def api_search_model():
             model_id = data['model_id'].lower()
             search_text_lower = data['search_text'].lower()
             
-            # Extract version numbers from model - same priority logic
-            name_decimal_versions = re.findall(r'\b(\d+\.\d+)\b', model_name)
-            model_id_decimal_versions = re.findall(r'\b(\d+\.\d+)\b', model_id)
+            # Extract version numbers from model - use flexible pattern without strict word boundaries
+            # This matches decimal versions like "1.1" in "flux1.1" or "v3.5" or "2.0-turbo"
+            name_decimal_versions = re.findall(r'(?<!\d)(\d+\.\d+)(?!\d)', model_name)
+            model_id_decimal_versions = re.findall(r'(?<!\d)(\d+\.\d+)(?!\d)', model_id)
             
             # If model has decimal versions, use those; otherwise use single digits
             if name_decimal_versions or model_id_decimal_versions:
                 all_model_versions = set(name_decimal_versions + model_id_decimal_versions)
             else:
-                name_single_versions = re.findall(r'\b(\d+)\b', model_name)
-                model_id_single_versions = re.findall(r'\b(\d+)\b', model_id)
+                name_single_versions = re.findall(r'(?<!\d)(\d+)(?!\d)', model_name)
+                model_id_single_versions = re.findall(r'(?<!\d)(\d+)(?!\d)', model_id)
                 all_model_versions = set(name_single_versions + model_id_single_versions)
             
             # VERSION FILTERING - If user asked for a specific version, require a match
             if search_versions:
                 search_version_set = set(search_versions)
                 if not (search_version_set & all_model_versions):
+                    print(f"DEBUG: Filtered out {model_name} - version mismatch (search: {search_version_set}, model: {all_model_versions})")
                     continue
             
             # FUZZY MATCHING - Calculate multiple similarity scores
@@ -3151,6 +3154,7 @@ def api_search_model():
 
             # Require at least one token overlap when search contains tokens
             if search_tokens and not matching_tokens:
+                print(f"DEBUG: Filtered out {model_name} - no token overlap (search: {search_tokens}, model: {model_tokens & search_tokens})")
                 continue
             token_match_ratio = len(matching_tokens) / len(search_tokens) if search_tokens else 0
             token_bonus = token_match_ratio * 40  # Up to +40 for matching all key terms
@@ -3233,6 +3237,9 @@ def api_search_model():
         
         # Extract top matching models
         models = [r['model'] for r in matched_results[:50]]
+        
+        print(f"DEBUG: Matched {len(matched_results)} models after filtering")
+        print(f"DEBUG: Returning top {len(models)} models")
         
         if not models:
             return jsonify({
