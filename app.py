@@ -3194,12 +3194,12 @@ def api_search_model():
             # Check parsed company match
             parsed_company = (data['parsed_company'] or '').lower()
             if parsed_company and parsed_company in search_lower:
-                parsed_bonus += 30
+                parsed_bonus += 100  # Strong boost for company match
             
             # Check parsed family match
             parsed_family = (data['parsed_family'] or '').lower()
             if parsed_family and parsed_family in search_lower:
-                parsed_bonus += 35
+                parsed_bonus += 120  # Strong boost for family match (e.g., "ideogram", "flux")
             
             # Check parsed size match
             parsed_size = (data['parsed_size'] or '').lower()
@@ -3210,6 +3210,20 @@ def api_search_model():
             parsed_version = (data['parsed_version'] or '').lower()
             if parsed_version and parsed_version in search_lower:
                 parsed_bonus += 10
+            
+            # PENALTY for wrong family - if search contains a family name and model is different family
+            # Extract known families from search
+            known_families = {'flux', 'ideogram', 'stable', 'diffusion', 'imagen', 'dall', 'midjourney', 
+                            'gpt', 'claude', 'llama', 'gemini', 'recraft', 'wan', 'sora', 'kling'}
+            search_families = {word for word in search_tokens if word in known_families}
+            model_family_lower = parsed_family.lower() if parsed_family else ''
+            
+            # If search specifies a family and model is different family, apply heavy penalty
+            family_penalty = 0
+            if search_families and model_family_lower:
+                # Check if model family matches any search family
+                if not any(fam in model_family_lower for fam in search_families):
+                    family_penalty = -150  # Heavy penalty for wrong family
             
             # Exact substring bonus
             exact_name_bonus = 50 if search_lower in model_name else 0
@@ -3243,7 +3257,8 @@ def api_search_model():
                 exact_model_id_bonus +
                 token_bonus +               # Bonus for matching key components
                 parsed_bonus +              # Bonus for matching parsed fields (company, family, etc.)
-                version_bonus               # Bonus for version match
+                version_bonus +             # Bonus for version match
+                family_penalty              # Penalty for wrong family
             ) / 15.6
             
             # Threshold - filter low-relevance matches
