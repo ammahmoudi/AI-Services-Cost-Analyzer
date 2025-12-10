@@ -219,7 +219,7 @@
                                     {% endfor %}
                                 </optgroup>
                                 <optgroup label="Paid Models">
-                                    {% for model in available_models[:20] if not model.is_free %}
+                                    {% for model in available_models if not model.is_free %}
                                         <option value="{{ model.id }}"
                                                 {% if llm_search and llm_search.model_name == model.id %}selected{% endif %}>
                                             {{ model.name }} - ${{ "%.2f"|format(model.prompt_price|float * 1000000) }}/1M

@@ -3072,15 +3072,10 @@ def api_search_model():
                 model_id_single_versions = re.findall(r'\b(\d+)\b', model_id)
                 all_model_versions = set(name_single_versions + model_id_single_versions)
             
-            # VERSION FILTERING - Critical for "Flux 1.1" vs "Flux 2" vs "FLUX.1"
+            # VERSION FILTERING - Soft filtering (don't skip, but use as ranking signal)
+            # If search has SPECIFIC version (like 1.1), prefer exact matches but allow others
             if search_versions:
-                # If search has SPECIFIC version (like 1.1), ONLY show exact matches
-                search_version_set = set(search_versions)
-                
-                # Model MUST have at least one matching version
-                if not (search_version_set & all_model_versions):
-                    # No matching version - SKIP this model
-                    continue
+                pass  # Don't skip models - use version as a ranking signal only
             
             # FUZZY MATCHING - Calculate multiple similarity scores
             # FUZZY MATCHING - Calculate multiple similarity scores
@@ -3141,10 +3136,10 @@ def api_search_model():
                 version_bonus               # Bonus for version match
             ) / 15.6
             
-            # Threshold - be more lenient for structured searches
-            min_threshold = 50
+            # Threshold - be more lenient for broader search results
+            min_threshold = 35
             
-            if max_overall_score >= 55 or weighted_score >= min_threshold:
+            if max_overall_score >= 40 or weighted_score >= min_threshold:
                 matched_results.append({
                     'model': data['model'],
                     'score': weighted_score,
@@ -3233,7 +3228,7 @@ def api_search_model():
         close_session()
 
 
-def fallback_semantic_search(query, all_models, session):
+def fallback_semantic_search(query, all_models):
     """Fallback semantic search when LLM is not available - uses keyword matching"""
     from rapidfuzz import fuzz
     
@@ -3390,11 +3385,11 @@ def api_search_model_ai():
             llm_client = get_llm_client(purpose='search')
         except (ImportError, AttributeError):
             # LLM client not available, use fallback
-            return fallback_semantic_search(query, all_models, session)
+            return fallback_semantic_search(query, all_models)
         
         if not llm_client:
             # LLM not configured for search, use fallback
-            return fallback_semantic_search(query, all_models, session)
+            return fallback_semantic_search(query, all_models)
         
         # Prepare model data for LLM
         models_summary = []
