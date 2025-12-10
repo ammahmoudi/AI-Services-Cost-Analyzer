@@ -21,21 +21,37 @@ KNOWN_COMPANIES = {
     'bfl', 'black-forest-labs', 'black forest labs', 'stability', 'stabilityai',
     'midjourney', 'runway', 'pika', 'together', 'replicate', 'huggingface',
     'nvidia', 'aws', 'azure', 'databricks', '01.ai', 'deepseek', 'alibaba',
-    'baidu', 'bytedance', 'imagination', 'rundiffusion', 'juggernaut'
+    'baidu', 'bytedance', 'imagination', 'rundiffusion', 'juggernaut', 'qwen'
 }
 
 # Known model families
 KNOWN_MODEL_FAMILIES = {
     'gpt', 'llama', 'claude', 'gemini', 'mistral', 'command', 'flux', 'stable-diffusion',
     'sd', 'dalle', 'midjourney', 'seedance', 'pulid', 'qwen', 'deepseek', 'yi',
-    'wizard', 'vicuna', 'orca', 'falcon', 'mpt', 'phi', 'mixtral', 'juggernaut'
+    'wizard', 'vicuna', 'orca', 'falcon', 'mpt', 'phi', 'mixtral', 'juggernaut',
+    'imagen', 'pixtral', 'grok'
 }
 
-# Known size indicators
+# Mapping of model family to likely company/provider
+FAMILY_TO_COMPANY = {
+    'qwen': 'Alibaba',
+    'imagen': 'Google',
+    'deepseek': 'DeepSeek',
+    'mistral': 'Mistral',
+    'falcon': 'Technology Innovation Institute',
+    'mpt': 'MosaicML',
+    'phi': 'Microsoft',
+    'yi': 'Zero One AI',
+    'wizard': 'NousResearch',
+    'grok': 'xAI',
+    'pixtral': 'Mistral',
+}
+
+# Known size indicators - exclude 'ultra' and similar variant-like words
 SIZE_PATTERNS = [
     r'\b(\d+(?:\.\d+)?[BM])\b',  # 8B, 70B, 1.5B, 13M
     r'\b(\d+x\d+[BM])\b',         # 8x7B (MoE models)
-    r'\b(tiny|small|base|medium|large|xl|xxl|ultra)\b'
+    r'\b(tiny|small|base|medium|large|xl|xxl)\b'
 ]
 
 # Known variant/type keywords
@@ -147,6 +163,12 @@ class ModelNameParser:
         # Extract model family
         result.model_family = self._extract_model_family(combined)
         
+        # Infer company from family if not found
+        if not result.company and result.model_family:
+            family_lower = result.model_family.lower()
+            if family_lower in FAMILY_TO_COMPANY:
+                result.company = FAMILY_TO_COMPANY[family_lower]
+        
         # Extract size
         result.size = self._extract_size(combined)
         
@@ -161,18 +183,23 @@ class ModelNameParser:
     
     def _extract_version(self, text: str) -> Optional[str]:
         """Extract version number, prioritizing decimal versions."""
-        # Look for decimal versions first (1.1, 3.5, 2.0)
-        decimal_match = re.search(r'\b(\d+\.\d+)\b', text)
+        # Look for decimal versions first (1.1, 3.5, 2.0) even when stuck to words (e.g., FLUX1.1)
+        decimal_match = re.search(r'(?<!\d)(\d+\.\d+)', text)
         if decimal_match:
             return decimal_match.group(1)
         
+        # Flux-specific fused patterns like "flux1.1", "flux-1", "flux.1"
+        flux_match = re.search(r'flux[\s\._-]*([0-9]+(?:\.[0-9]+)?)', text, re.IGNORECASE)
+        if flux_match:
+            return flux_match.group(1)
+
         # Look for single digit versions (but be careful with sizes like "8B")
         # Only match if followed by whitespace or end, not "B" or "M"
-        single_match = re.search(r'\b(\d+)(?!\.\d)(?![BM])\b', text)
+        single_match = re.search(r'(?<!\d)(\d{1,2})(?!\.\d)(?![BMbm])', text)
         if single_match:
             version = single_match.group(1)
             # Filter out obvious non-versions (like years, large numbers)
-            if len(version) <= 2 and int(version) < 20:
+            if len(version) <= 2 and int(version) < 30:
                 return version
         
         return None
@@ -185,7 +212,7 @@ class ModelNameParser:
         return None
     
     def _extract_company(self, text: str) -> Optional[str]:
-        """Extract company/provider name."""
+        """Extract company/provider name or infer from family."""
         match = self.company_pattern.search(text)
         if match:
             company = match.group(1).lower()
@@ -194,6 +221,8 @@ class ModelNameParser:
                 return 'BFL'
             if company == 'stabilityai':
                 return 'Stability'
+            if company == 'qwen':
+                return 'Alibaba'
             return company.title()
         return None
     

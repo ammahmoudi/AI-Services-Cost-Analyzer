@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from ai_cost_manager.database import get_session, close_session, init_db
 from ai_cost_manager.models import APISource, AIModel, LLMConfiguration, AuthSettings, ExtractorAPIKey, ExtractionTask
 from ai_cost_manager.openrouter_client import fetch_openrouter_models, get_recommended_models
+from sqlalchemy.orm import joinedload
 from extractors import get_extractor, list_extractors
 from datetime import datetime
 
@@ -3089,6 +3090,7 @@ def api_search_model():
         for data in model_search_data:
             model_name = data['name'].lower()
             model_id = data['model_id'].lower()
+            search_text_lower = data['search_text'].lower()
             
             # Extract version numbers from model - same priority logic
             name_decimal_versions = re.findall(r'\b(\d+\.\d+)\b', model_name)
@@ -3102,10 +3104,11 @@ def api_search_model():
                 model_id_single_versions = re.findall(r'\b(\d+)\b', model_id)
                 all_model_versions = set(name_single_versions + model_id_single_versions)
             
-            # VERSION FILTERING - Soft filtering (don't skip, but use as ranking signal)
-            # If search has SPECIFIC version (like 1.1), prefer exact matches but allow others
+            # VERSION FILTERING - If user asked for a specific version, require a match
             if search_versions:
-                pass  # Don't skip models - use version as a ranking signal only
+                search_version_set = set(search_versions)
+                if not (search_version_set & all_model_versions):
+                    continue
             
             # FUZZY MATCHING - Calculate multiple similarity scores
             # FUZZY MATCHING - Calculate multiple similarity scores
@@ -3127,8 +3130,12 @@ def api_search_model():
             
             # COMPONENT MATCHING BONUSES
             # Check if key search tokens appear in model (company, model family, type, etc.)
-            model_tokens = set(re.findall(r'\b\w+\b', model_name)) | set(re.findall(r'\b\w+\b', model_id))
+            model_tokens = set(re.findall(r'\b\w+\b', search_text_lower))
             matching_tokens = search_tokens & model_tokens
+
+            # Require at least one token overlap when search contains tokens
+            if search_tokens and not matching_tokens:
+                continue
             token_match_ratio = len(matching_tokens) / len(search_tokens) if search_tokens else 0
             token_bonus = token_match_ratio * 40  # Up to +40 for matching all key terms
             
@@ -3166,10 +3173,10 @@ def api_search_model():
                 version_bonus               # Bonus for version match
             ) / 15.6
             
-            # Threshold - be more lenient for broader search results
-            min_threshold = 35
+            # Threshold - filter low-relevance matches
+            min_threshold = 55
             
-            if max_overall_score >= 40 or weighted_score >= min_threshold:
+            if max_overall_score >= 60 or weighted_score >= min_threshold:
                 matched_results.append({
                     'model': data['model'],
                     'score': weighted_score,
@@ -3184,8 +3191,8 @@ def api_search_model():
             reverse=True
         )
         
-        # Extract all matching models (no limit)
-        models = [r['model'] for r in matched_results]
+        # Extract top matching models
+        models = [r['model'] for r in matched_results[:50]]
         
         if not models:
             return jsonify({
@@ -3405,8 +3412,8 @@ def api_search_model_ai():
         if not query:
             return jsonify({'error': 'Search query is required'}), 400
         
-        # Get all models with joined source to avoid lazy loading
-        all_models = session.query(AIModel).join(APISource, AIModel.source_id == APISource.id, isouter=True).all()
+        # Get all models with source eagerly loaded to avoid lazy loading
+        all_models = session.query(AIModel).options(joinedload(AIModel.source)).all()
         
         if not all_models:
             return jsonify({
