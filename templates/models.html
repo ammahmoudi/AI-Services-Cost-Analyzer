@@ -5,6 +5,9 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <h2>AI Models</h2>
         <div style="display: flex; gap: 0.5rem;">
+            <button class="btn" style="background: #6b7280;" onclick="toggleViewMode()" title="Toggle between detailed and simple view">
+                📊 Simple View
+            </button>
             <button class="btn" style="background: #8b5cf6;" onclick="showLLMExtractionModal()" title="Use LLM to fix model types, tags, and metadata">
                 🤖 Run LLM Extraction
             </button>
@@ -151,6 +154,9 @@
     
     {% if models %}
         <p style="color: #6b7280; margin-bottom: 1rem;">Showing {{ models|length }} models</p>
+        
+        <!-- Detailed View (default) -->
+        <div id="detailedView" style="display: block;">
         <table>
             <thead>
                 <tr>
@@ -217,6 +223,43 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
+        
+        <!-- Simple View -->
+        <div id="simpleView" style="display: none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Model Name</th>
+                    <th>Model ID</th>
+                    <th>Company</th>
+                    <th>Family</th>
+                    <th>Version</th>
+                    <th>Size</th>
+                    <th>Cost per Call</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for model in models %}
+                <tr>
+                    <td>{{ model.name }}</td>
+                    <td><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem;">{{ model.model_id }}</code></td>
+                    <td>{{ model.parsed_company or '-' }}</td>
+                    <td>{{ model.parsed_model_family or '-' }}</td>
+                    <td>{{ model.parsed_version or '-' }}</td>
+                    <td>{{ model.parsed_size or '-' }}</td>
+                    <td>
+                        {% if model.cost_per_call and model.cost_per_call > 0 %}
+                            <strong>${{ "%.4f"|format(model.cost_per_call) }}</strong>
+                        {% else %}
+                            <span style="color: #dc2626;">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
     {% else %}
         <div class="empty-state">
             <h3>No models found</h3>
@@ -1083,6 +1126,21 @@ function showLLMProgressModal(total) {
 function closeLLMProgressModal() {
     document.getElementById('llmProgressModal').style.display = 'none';
     location.reload();
+}
+
+function toggleViewMode() {
+    const detailedView = document.getElementById('detailedView');
+    const simpleView = document.getElementById('simpleView');
+    
+    if (detailedView.style.display === 'none') {
+        // Switch to detailed view
+        detailedView.style.display = 'block';
+        simpleView.style.display = 'none';
+    } else {
+        // Switch to simple view
+        detailedView.style.display = 'none';
+        simpleView.style.display = 'block';
+    }
 }
 </script>
 {% endblock %}

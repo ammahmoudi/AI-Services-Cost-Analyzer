@@ -21,7 +21,10 @@ KNOWN_COMPANIES = {
     'bfl', 'black-forest-labs', 'black forest labs', 'stability', 'stabilityai',
     'midjourney', 'runway', 'pika', 'together', 'replicate', 'huggingface',
     'nvidia', 'aws', 'azure', 'databricks', '01.ai', 'deepseek', 'alibaba',
-    'baidu', 'bytedance', 'imagination', 'rundiffusion', 'juggernaut', 'qwen'
+    'baidu', 'bytedance', 'imagination', 'rundiffusion', 'juggernaut', 'qwen',
+    'klingai', 'pruna', 'prunaai', 'hidream', 'together', 'fal', 'replicate',
+    'inference', 'tensor', 'cerebras', 'groq', 'tencent', 'jina', 'eleutheral',
+    'avail', 'avalai', 'metisai', 'runware', 'luma', 'kling'
 }
 
 # Known model families
@@ -29,7 +32,8 @@ KNOWN_MODEL_FAMILIES = {
     'gpt', 'llama', 'claude', 'gemini', 'mistral', 'command', 'flux', 'stable-diffusion',
     'sd', 'dalle', 'midjourney', 'seedance', 'pulid', 'qwen', 'deepseek', 'yi',
     'wizard', 'vicuna', 'orca', 'falcon', 'mpt', 'phi', 'mixtral', 'juggernaut',
-    'imagen', 'pixtral', 'grok'
+    'imagen', 'pixtral', 'grok', 'kling', 'klingai', 'hidream', 'pixelcraft',
+    'moondream', 'molmo', 'llava', 'idefics', 'lava', 'kosmos', 'blip', 'dali'
 }
 
 # Mapping of model family to likely company/provider
@@ -45,6 +49,12 @@ FAMILY_TO_COMPANY = {
     'wizard': 'NousResearch',
     'grok': 'xAI',
     'pixtral': 'Mistral',
+    'kling': 'Klingai',
+    'klingai': 'Klingai',
+    'hidream': 'HiDream',
+    'llava': 'LLaVA-RLHF',
+    'moondream': 'Moondream',
+    'molmo': 'Molmo',
 }
 
 # Known size indicators - exclude 'ultra' and similar variant-like words
@@ -212,7 +222,10 @@ class ModelNameParser:
         return None
     
     def _extract_company(self, text: str) -> Optional[str]:
-        """Extract company/provider name or infer from family."""
+        """Extract company/provider name - tries exact match first, then partial."""
+        text_lower = text.lower()
+        
+        # Exact word match first
         match = self.company_pattern.search(text)
         if match:
             company = match.group(1).lower()
@@ -224,17 +237,56 @@ class ModelNameParser:
             if company == 'qwen':
                 return 'Alibaba'
             return company.title()
+        
+        # Try partial matching for known companies (e.g., "klingai" matches "klingai")
+        for known_company in sorted(KNOWN_COMPANIES, key=len, reverse=True):  # Longest first
+            if known_company in text_lower:
+                # Avoid matching parts of other words (e.g., "openai" in "openai-gpt")
+                if re.search(r'\b' + re.escape(known_company) + r'\b', text_lower, re.IGNORECASE):
+                    company = known_company.lower()
+                    if company == 'qwen':
+                        return 'Alibaba'
+                    if company in ['klingai', 'kling']:
+                        return 'Klingai'
+                    if company in ['prunaai', 'pruna']:
+                        return 'Pruna'
+                    if company == 'hidream':
+                        return 'HiDream'
+                    return company.title()
+        
         return None
     
     def _extract_model_family(self, text: str) -> Optional[str]:
-        """Extract model family name."""
+        """Extract model family name - tries exact match first, then partial."""
+        text_lower = text.lower()
+        
+        # Exact word match first
         match = self.model_family_pattern.search(text)
         if match:
             family = match.group(1).lower()
             # Normalize variations
             if family == 'sd':
                 return 'Stable-Diffusion'
+            if family in ['kling', 'klingai']:
+                return 'Kling'
+            if family == 'flux':
+                return 'Flux'
             return family.title()
+        
+        # Try partial matching for known families (e.g., "flux" in "FLUX1.1")
+        for known_family in sorted(KNOWN_MODEL_FAMILIES, key=len, reverse=True):  # Longest first
+            if known_family in text_lower:
+                # Avoid matching parts of other words
+                if re.search(r'\b' + re.escape(known_family) + r'\b', text_lower, re.IGNORECASE):
+                    family = known_family.lower()
+                    if family == 'sd':
+                        return 'Stable-Diffusion'
+                    if family in ['kling', 'klingai']:
+                        return 'Kling'
+                    if family == 'flux':
+                        return 'Flux'
+                    return family.title()
+        
         return None
     
     def _extract_size(self, text: str) -> Optional[str]:
