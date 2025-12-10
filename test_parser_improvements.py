@@ -16,7 +16,7 @@ def test_parser():
         
         # Fal models - fal-ai/ is PROVIDER prefix, NOT company - extract from name
         ("ACE-Step", "fal-ai/ace-step", None),  # Generic model, no clear company
-        ("Flux 2 (Edit)", "fal-ai/flux/v2/edit", "Fal"),  # Flux family -> Fal company (via mapping)
+        ("Flux 2 (Edit)", "fal-ai/flux/v2/edit", "BFL"),  # Flux family -> BFL company (via mapping)
         ("AnimateDiff (Text To Video)", "fal-ai/fast-animatediff/text-to-video", None),  # AnimateDiff is not a company
         ("Bria 3.2 Text-to-Image", "bria/text-to-image/3.2", "Bria"),  # Company in name
         ("Bytedance (Edit Image)", "fal-ai/bytedance/seededit/v3/edit-image", "Bytedance"),  # Company in path
@@ -84,7 +84,7 @@ def test_parser():
     print("\nEXAMPLE FAMILY INFERENCE:")
     print("-" * 60)
     examples = [
-        ("Flux model", "some-flux-model", "Fal (inferred from 'flux' family)"),
+        ("Flux model", "some-flux-model", "BFL (inferred from 'flux' family)"),
         ("Seedance video", "seedance-1-0", "Bytedance (inferred from 'seedance' family)"),
         ("Claude chat", "claude-4-opus", "Anthropic (inferred from 'claude' family)"),
     ]

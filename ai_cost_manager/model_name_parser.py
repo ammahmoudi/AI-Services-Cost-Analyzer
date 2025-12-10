@@ -15,14 +15,16 @@ from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, asdict
 
 
-# Known companies/providers
+# Known companies/providers  
+# NOTE: "fal" is intentionally excluded from this list to avoid false positives
+# since it's primarily an API provider prefix (fal-ai/), not a model creator
 KNOWN_COMPANIES = {
     'meta', 'openai', 'anthropic', 'google', 'microsoft', 'mistral', 'cohere',
     'bfl', 'black-forest-labs', 'black forest labs', 'stability', 'stabilityai',
     'midjourney', 'runway', 'pika', 'together', 'replicate', 'huggingface',
     'nvidia', 'aws', 'azure', 'databricks', '01.ai', 'deepseek', 'alibaba',
     'baidu', 'bytedance', 'imagination', 'rundiffusion', 'juggernaut', 'qwen',
-    'klingai', 'pruna', 'prunaai', 'hidream', 'fal', 'inference', 'tensor', 
+    'klingai', 'pruna', 'prunaai', 'hidream', 'inference', 'tensor', 
     'cerebras', 'groq', 'tencent', 'jina', 'eleutheral', 'avail', 'avalai', 
     'metisai', 'runware', 'luma', 'kling', 'kuaishou', 'minimax', 'moonshot',
     'xai', 'x.ai', 'ideogram', 'recraft', 'bria', 'salesforce', 'arcee', 
@@ -104,7 +106,7 @@ FAMILY_TO_COMPANY = {
     'dalle': 'OpenAI',
     'sora': 'OpenAI',
     'whisper': 'OpenAI',
-    'flux': 'Fal',
+    'flux': 'BFL',
     'stable-diffusion': 'Stability',
     'sd': 'Stability',
     'sdxl': 'Stability',
@@ -178,10 +180,7 @@ FAMILY_TO_COMPANY = {
     'apriel': 'ServiceNow',
     'marin': 'Marin',
     'chatterbox': 'Resemble',
-    'auraflow': 'Fal',
-    'bagel': 'Fal',
-    'cartoonify': 'Fal',
-    'csm': 'Fal'
+    'csm': 'Stability'
 }
 
 # Known size indicators - exclude 'ultra' and similar variant-like words
@@ -399,7 +398,6 @@ class ModelNameParser:
     
     def _extract_company(self, text: str, model_id: str = '') -> Optional[str]:
         """Extract company/provider name from text and model_id, ignoring API provider prefixes."""
-        text_lower = text.lower()
         model_id_lower = model_id.lower()
         
         # IMPORTANT: Provider prefixes like 'fal-ai/', 'anthropic/', 'cohere/' are API providers,
@@ -463,25 +461,9 @@ class ModelNameParser:
         # Exact word match in combined text (name + cleaned model_id)
         combined_text = f"{text} {cleaned_model_id}"
         match = self.company_pattern.search(combined_text)
-        if match:
-            company = match.group(1).lower()
-            # Normalize variations
-            if company in ['black-forest-labs', 'black forest labs']:
-                return 'BFL'
-            if company == 'stabilityai':
-                return 'Stability'
-            if company == 'qwen':
-                return 'Alibaba'
-            if company == 'bytedance':
-                return 'Bytedance'
-            if company == 'anthropic':
-                return 'Anthropic'
-            if company == 'cohere':
-                return 'Cohere'
-            return company.title()
         
         # Check if model NAME starts with a company name (e.g., "Alibaba qwen3-32b", "Anthropic claude-4")
-        # This handles cases where the display name includes the company
+        # This handles cases where the display name includes the company - check this FIRST for priority
         name_parts = text.split()
         if name_parts:
             first_word = name_parts[0].lower()
@@ -508,23 +490,39 @@ class ModelNameParser:
                     return 'Mistral'
                 if first_word == 'deepseek':
                     return 'DeepSeek'
+                # Check first word (original case) against known companies to preserve proper casing
+                if first_word in ['black-forest-labs', 'blackforestlabs']:
+                    return 'BFL'
                 return first_word.title()
+        
+        # Pattern match from combined text
         if match:
             company = match.group(1).lower()
             # Normalize variations
             if company in ['black-forest-labs', 'black forest labs']:
                 return 'BFL'
+            if company == 'bfl':
+                return 'BFL'
             if company == 'stabilityai':
                 return 'Stability'
             if company == 'qwen':
                 return 'Alibaba'
+            if company == 'bytedance':
+                return 'Bytedance'
+            if company == 'anthropic':
+                return 'Anthropic'
+            if company == 'cohere':
+                return 'Cohere'
             return company.title()
         
-        # Try partial matching for known companies
+        # Try partial matching for known companies (use cleaned text)
+        combined_text_lower = f"{text} {cleaned_model_id}".lower()
         for known_company in sorted(KNOWN_COMPANIES, key=len, reverse=True):
-            if known_company in text_lower:
-                if re.search(r'\b' + re.escape(known_company) + r'\b', text_lower, re.IGNORECASE):
+            if known_company in combined_text_lower:
+                if re.search(r'\b' + re.escape(known_company) + r'\b', combined_text_lower, re.IGNORECASE):
                     company = known_company.lower()
+                    if company == 'bfl':
+                        return 'BFL'
                     if company == 'qwen':
                         return 'Alibaba'
                     if company in ['klingai', 'kling']:
