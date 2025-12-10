@@ -38,7 +38,132 @@ KNOWN_COMPANIES = {
     'isaac', 'zai', 'z.ai', 'sourceful', 'imagineart', 'leonardo', 'dreamshaper',
     'lykon', 'servicenow', 'apriel', 'resemble', 'argil', 'mirelo', 'moonvalley',
     'marey', 'creatify', 'groq', 'llama', 'typhoon', 'qwq', 'qvq', 'kimi',
-    'civitai', 'dataforseo', 'baai', 'byteplus'
+    'civitai', 'dataforseo', 'baai', 'byteplus', 'imagination', 'yue', 'zonos'
+}
+
+# Company name capitalization mapping for consistency
+# Maps lowercase company names to their proper capitalization
+COMPANY_CAPITALIZATION = {
+    'bfl': 'BFL',
+    'black-forest-labs': 'BFL',
+    'black forest labs': 'BFL',
+    'openai': 'OpenAI',
+    'deepseek': 'DeepSeek',
+    'stabilityai': 'Stability',
+    'midjourney': 'Midjourney',
+    'huggingface': 'HuggingFace',
+    'bytedance': 'Bytedance',
+    'alibaba': 'Alibaba',
+    'anthropic': 'Anthropic',
+    'cohere': 'Cohere',
+    'klingai': 'Klingai',
+    'kling': 'Klingai',
+    'prunaai': 'Pruna',
+    'pruna': 'Pruna',
+    'hidream': 'HiDream',
+    'avalai': 'AvalAI',
+    'avail': 'AvalAI',
+    'metisai': 'MetisAI',
+    'runware': 'Runware',
+    'rundiffusion': 'RunDiffusion',
+    'elevenlabs': 'ElevenLabs',
+    '11labs': 'ElevenLabs',
+    'xai': 'xAI',
+    'x.ai': 'xAI',
+    'ideogram': 'Ideogram',
+    'recraft': 'Recraft',
+    'bria': 'Bria',
+    'salesforce': 'Salesforce',
+    'arcee': 'Arcee',
+    'cartesia': 'Cartesia',
+    'suno': 'Suno',
+    'udio': 'Udio',
+    'beatoven': 'Beatoven',
+    'cassette': 'Cassette',
+    'veed': 'Veed',
+    'easel': 'Easel',
+    'lightricks': 'Lightricks',
+    'tripo3d': 'Tripo3D',
+    'meshy': 'Meshy',
+    'pixverse': 'Pixverse',
+    'vidu': 'Vidu',
+    'togethercomputer': 'Together',
+    'together': 'Together',
+    'together.ai': 'Together',
+    'perplexity': 'Perplexity',
+    'tavily': 'Tavily',
+    'exa': 'Exa',
+    'firecrawl': 'Firecrawl',
+    'decart': 'Decart',
+    'wan': 'Alibaba',
+    'wan-ai': 'Alibaba',
+    'krea': 'Krea',
+    'cognition': 'Cognition',
+    'cogito': 'DeepCogito',
+    'deepcogito': 'DeepCogito',
+    'arize': 'Arize',
+    'marin': 'Marin',
+    'virtue': 'Virtue',
+    'refuel': 'Refuel',
+    'essentialai': 'EssentialAI',
+    'canopy': 'Canopy',
+    'hexgrad': 'Hexgrad',
+    'mercor': 'Mercor',
+    'higgsfield': 'Higgsfield',
+    'hvision': 'HVision',
+    'lucataco': 'Lucataco',
+    'nightmareai': 'NightmareAI',
+    'philz1337x': 'Philz1337x',
+    'fofr': 'Fofr',
+    'pseudoram': 'Pseudoram',
+    'smoretalk': 'SmoreTalk',
+    'clarityai': 'ClarityAI',
+    'simalabs': 'SimaLabs',
+    'perceptron': 'Perceptron',
+    'isaac': 'Isaac',
+    'zai': 'Z.AI',
+    'z.ai': 'Z.AI',
+    'sourceful': 'Sourceful',
+    'imagineart': 'ImagineArt',
+    'leonardo': 'Leonardo',
+    'dreamshaper': 'DreamShaper',
+    'lykon': 'Lykon',
+    'servicenow': 'ServiceNow',
+    'apriel': 'Apriel',
+    'resemble': 'Resemble',
+    'argil': 'Argil',
+    'mirelo': 'Mirelo',
+    'moonvalley': 'MoonValley',
+    'marey': 'Marey',
+    'creatify': 'Creatify',
+    'groq': 'Groq',
+    'typhoon': 'Typhoon',
+    'civitai': 'Civitai',
+    'dataforseo': 'DataForSEO',
+    'baai': 'BAAI',
+    'byteplus': 'BytePlus',
+    'imagination': 'Imagination',
+    'yue': 'YuE',
+    'zonos': 'Zonos',
+    'qwen': 'Alibaba',
+    'meta': 'Meta',
+    'google': 'Google',
+    'microsoft': 'Microsoft',
+    'mistral': 'Mistral',
+    'nvidia': 'Nvidia',
+    'aws': 'AWS',
+    'azure': 'Azure',
+    'databricks': 'Databricks',
+    '01.ai': '01.AI',
+    'baidu': 'Baidu',
+    'tencent': 'Tencent',
+    'jina': 'Jina',
+    'eleutheral': 'EleutherAL',
+    'luma': 'Luma',
+    'minimax': 'Minimax',
+    'moonshot': 'Moonshot',
+    'juggernaut': 'Juggernaut',
+    'kuaishou': 'Kuaishou'
 }
 
 # Known model families
@@ -180,7 +305,9 @@ FAMILY_TO_COMPANY = {
     'apriel': 'ServiceNow',
     'marin': 'Marin',
     'chatterbox': 'Resemble',
-    'csm': 'Stability'
+    'csm': 'Stability',
+    'yue': 'YuE',
+    'zonos': 'Zonos'
 }
 
 # Known size indicators - exclude 'ultra' and similar variant-like words
@@ -201,13 +328,13 @@ VARIANT_KEYWORDS = {
     'preview', 'fast', 'distill', 'distilled', 'maverick', 'scout', 'guard',
     'master', 'director', 'live', 'reference', 'subject', 'hd', 'hq', 'reference',
     'tput', 'throughput', 'audio', 'realtime', 'transcribe', 'diarize', 'tts',
-    'embedding', 'embed', 'rerank', 'retriever', 'qa', 'search', 'ocr'
+    'embedding', 'embed', 'rerank', 'retriever', 'qa', 'search', 'ocr', 'kontext'
 }
 
 # Known mode keywords (for image generation, video, and multimodal models)
 MODE_KEYWORDS = {
     'fill', 'redux', 'edit', 'inpaint', 'outpaint', 'upscale', 'enhance', 'remix',
-    'text-to-image', 't2i', 'image-to-image', 'i2i', 'controlnet', 'lora', 'kontext',
+    'text-to-image', 't2i', 'image-to-image', 'i2i', 'controlnet', 'lora',
     'krea', 'srpo', 'schnell', 'stream', 'multi', 'portrait', 'realism', 'anime',
     'text-to-video', 't2v', 'image-to-video', 'i2v', 'video-to-video', 'v2v',
     'text-to-audio', 't2a', 'audio-to-audio', 'a2a', 'video-to-audio', 'v2a',
@@ -434,29 +561,20 @@ class ModelNameParser:
             # Check for company/model pattern
             slash_match = re.match(r'^([a-zA-Z][a-zA-Z0-9._-]+)/', cleaned_model_id)
             if slash_match:
-                company = slash_match.group(1).replace('-', ' ').replace('_', ' ')
-                if company in ['black forest labs', 'blackforestlabs']:
-                    return 'BFL'
-                if company == 'stabilityai':
-                    return 'Stability'
-                if company == 'anthropic':
-                    return 'Anthropic'
-                if company == 'cohere':
-                    return 'Cohere'
+                company = slash_match.group(1).replace('-', ' ').replace('_', ' ').lower()
+                # Only use if it's a known company
                 if company in [c.lower() for c in KNOWN_COMPANIES]:
-                    return company.title()
+                    # Use capitalization mapping
+                    return COMPANY_CAPITALIZATION.get(company, company.title())
         
         # Check cleaned model_id for company-model pattern (e.g., bytedance-seedance, alibaba-qwen)
         dash_match = re.match(r'^([a-zA-Z][a-zA-Z0-9]+)-([a-zA-Z][a-zA-Z0-9]+)', cleaned_model_id)
         if dash_match:
-            potential_company = dash_match.group(1)
+            potential_company = dash_match.group(1).lower()
             # Check if first part is a known company
             if potential_company in [c.lower() for c in KNOWN_COMPANIES]:
-                if potential_company == 'bytedance':
-                    return 'Bytedance'
-                if potential_company == 'alibaba':
-                    return 'Alibaba'
-                return potential_company.title()
+                # Use capitalization mapping
+                return COMPANY_CAPITALIZATION.get(potential_company, potential_company.title())
         
         # Exact word match in combined text (name + cleaned model_id)
         combined_text = f"{text} {cleaned_model_id}"
@@ -468,52 +586,14 @@ class ModelNameParser:
         if name_parts:
             first_word = name_parts[0].lower()
             if first_word in [c.lower() for c in KNOWN_COMPANIES]:
-                if first_word == 'alibaba':
-                    return 'Alibaba'
-                if first_word == 'anthropic':
-                    return 'Anthropic'
-                if first_word == 'cohere':
-                    return 'Cohere'
-                if first_word == 'bytedance':
-                    return 'Bytedance'
-                if first_word == 'bfl':
-                    return 'BFL'
-                if first_word in ['google', 'gemini']:
-                    return 'Google'
-                if first_word == 'microsoft':
-                    return 'Microsoft'
-                if first_word == 'meta':
-                    return 'Meta'
-                if first_word == 'openai':
-                    return 'OpenAI'
-                if first_word == 'mistral':
-                    return 'Mistral'
-                if first_word == 'deepseek':
-                    return 'DeepSeek'
-                # Check first word (original case) against known companies to preserve proper casing
-                if first_word in ['black-forest-labs', 'blackforestlabs']:
-                    return 'BFL'
-                return first_word.title()
+                # Use capitalization mapping for consistency
+                return COMPANY_CAPITALIZATION.get(first_word, first_word.title())
         
         # Pattern match from combined text
         if match:
             company = match.group(1).lower()
-            # Normalize variations
-            if company in ['black-forest-labs', 'black forest labs']:
-                return 'BFL'
-            if company == 'bfl':
-                return 'BFL'
-            if company == 'stabilityai':
-                return 'Stability'
-            if company == 'qwen':
-                return 'Alibaba'
-            if company == 'bytedance':
-                return 'Bytedance'
-            if company == 'anthropic':
-                return 'Anthropic'
-            if company == 'cohere':
-                return 'Cohere'
-            return company.title()
+            # Use capitalization mapping for consistency
+            return COMPANY_CAPITALIZATION.get(company, company.title())
         
         # Try partial matching for known companies (use cleaned text)
         combined_text_lower = f"{text} {cleaned_model_id}".lower()
@@ -521,17 +601,8 @@ class ModelNameParser:
             if known_company in combined_text_lower:
                 if re.search(r'\b' + re.escape(known_company) + r'\b', combined_text_lower, re.IGNORECASE):
                     company = known_company.lower()
-                    if company == 'bfl':
-                        return 'BFL'
-                    if company == 'qwen':
-                        return 'Alibaba'
-                    if company in ['klingai', 'kling']:
-                        return 'Klingai'
-                    if company in ['prunaai', 'pruna']:
-                        return 'Pruna'
-                    if company == 'hidream':
-                        return 'HiDream'
-                    return company.title()
+                    # Use capitalization mapping for consistency
+                    return COMPANY_CAPITALIZATION.get(company, company.title())
         
         return None
     
