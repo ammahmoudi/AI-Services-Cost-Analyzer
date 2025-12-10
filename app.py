@@ -7,6 +7,7 @@ import os
 import json
 import time
 import traceback
+import re
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from dotenv import load_dotenv
@@ -481,6 +482,10 @@ def models():
         tags_filter = request.args.getlist('tags')  # Multi-select support
         search = request.args.get('search', '')
         missing_data = request.args.get('missing_data')  # 'cost', 'schema', 'llm', 'raw'
+        company_filter = request.args.get('company')
+        family_filter = request.args.get('family')
+        version_filter = request.args.get('version')
+        size_filter = request.args.get('size')
         
         # Build query
         query = session.query(AIModel)
@@ -519,6 +524,16 @@ def models():
         elif missing_data == 'raw':
             query = query.filter(AIModel.raw_metadata.is_(None))
         
+        # Filter by parsed fields
+        if company_filter:
+            query = query.filter(AIModel.parsed_company == company_filter)
+        if family_filter:
+            query = query.filter(AIModel.parsed_model_family == family_filter)
+        if version_filter:
+            query = query.filter(AIModel.parsed_version == version_filter)
+        if size_filter:
+            query = query.filter(AIModel.parsed_size == size_filter)
+        
         models = query.order_by(AIModel.name).all()
         sources = session.query(APISource).all()
         
@@ -536,6 +551,12 @@ def models():
             if model_tags[0] and isinstance(model_tags[0], list):
                 unique_tags.update(model_tags[0])
         all_tags = sorted(list(unique_tags))
+        
+        # Get unique parsed fields for filters
+        companies = sorted([c[0] for c in session.query(AIModel.parsed_company).distinct().all() if c[0]])
+        families = sorted([f[0] for f in session.query(AIModel.parsed_model_family).distinct().all() if f[0]])
+        versions = sorted([v[0] for v in session.query(AIModel.parsed_version).distinct().all() if v[0]], key=lambda x: [int(n) if n.isdigit() else n for n in re.split(r'(\d+)', x)])
+        sizes = sorted([s[0] for s in session.query(AIModel.parsed_size).distinct().all() if s[0]])
         
         # Count missing data statistics
         base_query = session.query(AIModel)
@@ -556,10 +577,18 @@ def models():
                              model_types=model_types,
                              categories=categories,
                              all_tags=all_tags,
+                             companies=companies,
+                             families=families,
+                             versions=versions,
+                             sizes=sizes,
                              current_source=source_id,
                              current_type=model_type,
                              current_category=category,
                              current_tags=tags_filter,
+                             current_company=company_filter,
+                             current_family=family_filter,
+                             current_version=version_filter,
+                             current_size=size_filter,
                              search=search,
                              missing_data=missing_data,
                              stats={

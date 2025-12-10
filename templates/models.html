@@ -96,6 +96,38 @@
                 <option value="schema" {% if missing_data == 'schema' %}selected{% endif %}>Missing Schema</option>
                 <option value="raw" {% if missing_data == 'raw' %}selected{% endif %}>Missing Raw Data</option>
             </select>
+            <select name="company" style="flex: 0 0 200px;">
+                <option value="">All Companies</option>
+                {% for company in companies %}
+                    <option value="{{ company }}" {% if current_company == company %}selected{% endif %}>
+                        {{ company }}
+                    </option>
+                {% endfor %}
+            </select>
+            <select name="family" style="flex: 0 0 200px;">
+                <option value="">All Families</option>
+                {% for family in families %}
+                    <option value="{{ family }}" {% if current_family == family %}selected{% endif %}>
+                        {{ family }}
+                    </option>
+                {% endfor %}
+            </select>
+            <select name="version" style="flex: 0 0 200px;">
+                <option value="">All Versions</option>
+                {% for version in versions %}
+                    <option value="{{ version }}" {% if current_version == version %}selected{% endif %}>
+                        {{ version }}
+                    </option>
+                {% endfor %}
+            </select>
+            <select name="size" style="flex: 0 0 200px;">
+                <option value="">All Sizes</option>
+                {% for size in sizes %}
+                    <option value="{{ size }}" {% if current_size == size %}selected{% endif %}>
+                        {{ size }}
+                    </option>
+                {% endfor %}
+            </select>
             <button type="submit" class="btn">Filter</button>
         </form>
         {% if search or current_source or current_type or missing_data %}
