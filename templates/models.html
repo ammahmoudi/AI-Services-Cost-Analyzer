@@ -227,7 +227,7 @@
         
         <!-- Simple View -->
         <div id="simpleView" style="display: none;">
-        <table>
+        <table style="font-size: 0.875rem;">
             <thead>
                 <tr>
                     <th>Model Name</th>
@@ -236,6 +236,8 @@
                     <th>Family</th>
                     <th>Version</th>
                     <th>Size</th>
+                    <th>Variants</th>
+                    <th>Modes</th>
                     <th>Cost per Call</th>
                 </tr>
             </thead>
@@ -243,11 +245,25 @@
                 {% for model in models %}
                 <tr>
                     <td>{{ model.name }}</td>
-                    <td><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem;">{{ model.model_id }}</code></td>
+                    <td><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">{{ model.model_id }}</code></td>
                     <td>{{ model.parsed_company or '-' }}</td>
                     <td>{{ model.parsed_model_family or '-' }}</td>
                     <td>{{ model.parsed_version or '-' }}</td>
                     <td>{{ model.parsed_size or '-' }}</td>
+                    <td>
+                        {% if model.parsed_variants %}
+                            <span style="color: #7c3aed; font-size: 0.8rem;">{{ model.parsed_variants }}</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if model.parsed_modes %}
+                            <span style="color: #059669; font-size: 0.8rem;">{{ model.parsed_modes }}</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
                     <td>
                         {% if model.cost_per_call and model.cost_per_call > 0 %}
                             <strong>${{ "%.4f"|format(model.cost_per_call) }}</strong>
