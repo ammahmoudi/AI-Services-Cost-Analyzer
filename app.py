@@ -3196,10 +3196,14 @@ def api_search_model():
             if parsed_company and parsed_company in search_lower:
                 parsed_bonus += 100  # Strong boost for company match
             
-            # Check parsed family match
+            # Check parsed family match - CRITICAL for disambiguation
             parsed_family = (data['parsed_family'] or '').lower()
             if parsed_family and parsed_family in search_lower:
-                parsed_bonus += 120  # Strong boost for family match (e.g., "ideogram", "flux")
+                parsed_bonus += 200  # VERY strong boost for family match (e.g., "ideogram", "flux")
+                # Extra boost if family is the PRIMARY term in search (not just version match)
+                family_is_primary = len(parsed_family) >= 4 and search_lower.startswith(parsed_family)
+                if family_is_primary:
+                    parsed_bonus += 150  # Additional boost for primary family term
             
             # Check parsed size match
             parsed_size = (data['parsed_size'] or '').lower()
@@ -3214,7 +3218,7 @@ def api_search_model():
             # PENALTY for wrong family - if search contains a family name and model is different family
             # Extract known families from search
             known_families = {'flux', 'ideogram', 'stable', 'diffusion', 'imagen', 'dall', 'midjourney', 
-                            'gpt', 'claude', 'llama', 'gemini', 'recraft', 'wan', 'sora', 'kling'}
+                            'gpt', 'claude', 'llama', 'gemini', 'recraft', 'wan', 'sora', 'kling', 'sana'}
             search_families = {word for word in search_tokens if word in known_families}
             model_family_lower = parsed_family.lower() if parsed_family else ''
             
@@ -3222,8 +3226,9 @@ def api_search_model():
             family_penalty = 0
             if search_families and model_family_lower:
                 # Check if model family matches any search family
-                if not any(fam in model_family_lower for fam in search_families):
-                    family_penalty = -150  # Heavy penalty for wrong family
+                search_has_match = any(fam in model_family_lower or model_family_lower in fam for fam in search_families)
+                if not search_has_match:
+                    family_penalty = -200  # VERY heavy penalty for wrong family
             
             # Exact substring bonus
             exact_name_bonus = 50 if search_lower in model_name else 0
