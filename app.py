@@ -3270,6 +3270,13 @@ def api_search_model():
             min_threshold = 55
             
             if max_overall_score >= 60 or weighted_score >= min_threshold:
+                # Debug logging for top results
+                if model_name in ['stable diffusion v3', 'ideogram v3 character edit', 'ideogram (reframe)', 'ideogram text to image']:
+                    print(f"DEBUG SCORING: {model_name}")
+                    print(f"  Family: {parsed_family}, Bonus: {parsed_bonus}, Penalty: {family_penalty}")
+                    print(f"  Weighted Score: {weighted_score:.2f}, Max Score: {max_overall_score:.2f}")
+                    print(f"  Token match: {token_match_ratio:.2f}, Version match: {has_exact_version}")
+                
                 matched_results.append({
                     'model': data['model'],
                     'score': weighted_score,
@@ -3283,6 +3290,11 @@ def api_search_model():
             key=lambda x: (x['has_version_match'], x['token_match_ratio'], x['score'], x['max_score']), 
             reverse=True
         )
+        
+        # Debug: Show top 5 after sorting
+        print(f"DEBUG: Top 5 after sorting:")
+        for i, r in enumerate(matched_results[:5]):
+            print(f"  {i+1}. {r['model'].name} - ver:{r['has_version_match']} tok:{r['token_match_ratio']:.2f} score:{r['score']:.2f} max:{r['max_score']:.2f}")
         
         # Extract top matching models
         models = [r['model'] for r in matched_results[:50]]
