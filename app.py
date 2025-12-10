@@ -3082,9 +3082,25 @@ def api_search_model():
         print(f"DEBUG: Search query: '{name}'")
         print(f"DEBUG: Extracted search versions: {search_versions}")
         
+        # Helper function to extract tokens with better handling of concatenated text
+        def extract_tokens(text):
+            """Extract tokens handling cases like 'flux1.1' -> ['flux', '1', '1']"""
+            # First split on word boundaries
+            tokens = set(re.findall(r'\b\w+\b', text.lower()))
+            # Then split tokens that have letters followed by numbers (e.g., "flux1" -> "flux")
+            expanded_tokens = set()
+            for token in tokens:
+                # Extract alphabetic prefix (e.g., "flux1" -> "flux")
+                alpha_match = re.match(r'^([a-z]+)', token)
+                if alpha_match:
+                    expanded_tokens.add(alpha_match.group(1))
+                # Also keep the original token
+                expanded_tokens.add(token)
+            return expanded_tokens
+        
         # Extract search tokens (words) for flexible matching
-        search_tokens = set(re.findall(r'\b\w+\b', search_lower))
-        # Remove version numbers from tokens to avoid double-counting
+        search_tokens = extract_tokens(search_lower)
+        # Remove pure version numbers from tokens to avoid double-counting
         search_tokens = {t for t in search_tokens if not re.match(r'^\d+\.?\d*$', t)}
         
         for data in model_search_data:
@@ -3130,7 +3146,7 @@ def api_search_model():
             
             # COMPONENT MATCHING BONUSES
             # Check if key search tokens appear in model (company, model family, type, etc.)
-            model_tokens = set(re.findall(r'\b\w+\b', search_text_lower))
+            model_tokens = extract_tokens(search_text_lower)
             matching_tokens = search_tokens & model_tokens
 
             # Require at least one token overlap when search contains tokens
@@ -3138,6 +3154,29 @@ def api_search_model():
                 continue
             token_match_ratio = len(matching_tokens) / len(search_tokens) if search_tokens else 0
             token_bonus = token_match_ratio * 40  # Up to +40 for matching all key terms
+            
+            # PARSED COMPONENT BONUSES - Give extra weight to matching parsed fields
+            parsed_bonus = 0
+            
+            # Check parsed company match
+            parsed_company = (data['parsed_company'] or '').lower()
+            if parsed_company and parsed_company in search_lower:
+                parsed_bonus += 30
+            
+            # Check parsed family match
+            parsed_family = (data['parsed_family'] or '').lower()
+            if parsed_family and parsed_family in search_lower:
+                parsed_bonus += 35
+            
+            # Check parsed size match
+            parsed_size = (data['parsed_size'] or '').lower()
+            if parsed_size and parsed_size in search_lower:
+                parsed_bonus += 15
+            
+            # Check parsed version match (already handled by version_bonus, but add search text matching)
+            parsed_version = (data['parsed_version'] or '').lower()
+            if parsed_version and parsed_version in search_lower:
+                parsed_bonus += 10
             
             # Exact substring bonus
             exact_name_bonus = 50 if search_lower in model_name else 0
@@ -3170,6 +3209,7 @@ def api_search_model():
                 exact_name_bonus +
                 exact_model_id_bonus +
                 token_bonus +               # Bonus for matching key components
+                parsed_bonus +              # Bonus for matching parsed fields (company, family, etc.)
                 version_bonus               # Bonus for version match
             ) / 15.6
             
