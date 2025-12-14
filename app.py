@@ -3130,7 +3130,13 @@ def api_search_model():
         
         # Extract search tokens (words) for flexible matching
         search_tokens = extract_tokens(search_lower)
-        # Remove pure version numbers from tokens to avoid double-counting
+        # Remove pure version numbers and single letters from tokens for overlap check
+        # This prevents matching on generic 'v' or 'v3' when searching for "ideogram v3"
+        search_tokens_for_overlap = {t for t in search_tokens 
+                                     if not re.match(r'^\d+\.?\d*$', t)  # No pure numbers
+                                     and not re.match(r'^v\d*\.?\d*$', t)  # No v3, v2.5, etc
+                                     and len(t) > 1}  # No single letters like 'v'
+        # Keep all tokens for scoring, but use filtered set for overlap check
         search_tokens = {t for t in search_tokens if not re.match(r'^\d+\.?\d*$', t)}
         
         for data in model_search_data:
@@ -3179,14 +3185,27 @@ def api_search_model():
             # COMPONENT MATCHING BONUSES
             # Check if key search tokens appear in model (company, model family, type, etc.)
             model_tokens = extract_tokens(search_text_lower)
-            matching_tokens = search_tokens & model_tokens
-
-            # Require at least one token overlap when search contains tokens
-            if search_tokens and not matching_tokens:
-                print(f"DEBUG: Filtered out {model_name} - no token overlap (search: {search_tokens}, model: {model_tokens & search_tokens})")
+            
+            # Use filtered tokens (no version indicators) for overlap check
+            matching_tokens_for_overlap = search_tokens_for_overlap & model_tokens
+            
+            # Require at least one meaningful token overlap (excluding version indicators)
+            if search_tokens_for_overlap and not matching_tokens_for_overlap:
+                print(f"DEBUG: Filtered out {model_name} - no meaningful token overlap (search: {search_tokens_for_overlap}, model: {model_tokens})")
                 continue
+            
+            # Use all search tokens for ratio calculation (for scoring)
+            matching_tokens = search_tokens & model_tokens
             token_match_ratio = len(matching_tokens) / len(search_tokens) if search_tokens else 0
             token_bonus = token_match_ratio * 40  # Up to +40 for matching all key terms
+            
+            # Debug for specific models
+            if 'ideogram' in model_name or 'stable diffusion v3' in model_name:
+                print(f"DEBUG TOKEN: {model_name}")
+                print(f"  Search tokens: {search_tokens}")
+                print(f"  Model tokens: {model_tokens}")
+                print(f"  Matching: {matching_tokens}")
+                print(f"  Ratio: {token_match_ratio:.2f}")
             
             # PARSED COMPONENT BONUSES - Give extra weight to matching parsed fields
             parsed_bonus = 0
@@ -3347,12 +3366,9 @@ def api_search_model():
                 cheapest_price = model_data['cost_per_call']
                 cheapest_model = model_data
         
-        # Sort by price (cheapest with actual price first, then N/A prices, then by name)
-        model_list.sort(key=lambda x: (
-            0 if x['cost_per_call'] is not None and x['cost_per_call'] > 0 else 1,  # Priced models first
-            x['cost_per_call'] if x['cost_per_call'] is not None else float('inf'),  # Sort by price
-            x['name']  # Then by name
-        ))
+        # IMPORTANT: Do NOT re-sort by price here - preserve relevance order from search scoring
+        # The models are already sorted by relevance (version match, token match, weighted score)
+        # Sorting by price would destroy the intelligent search ranking
         
         return jsonify({
             'success': True,
