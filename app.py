@@ -3114,16 +3114,23 @@ def api_search_model():
         
         # Helper function to extract tokens with better handling of concatenated text
         def extract_tokens(text):
-            """Extract tokens handling cases like 'flux1.1' -> ['flux', '1', '1']"""
+            """Extract tokens handling cases like 'flux1.1' -> ['flux', '1', '1'] and 'hunyuan3d' -> ['hunyuan', '3d']"""
             # First split on word boundaries
             tokens = set(re.findall(r'\b\w+\b', text.lower()))
             # Then split tokens that have letters followed by numbers (e.g., "flux1" -> "flux")
             expanded_tokens = set()
             for token in tokens:
-                # Extract alphabetic prefix (e.g., "flux1" -> "flux")
+                # Extract alphabetic prefix (e.g., "flux1" -> "flux", "hunyuan3d" -> "hunyuan")
                 alpha_match = re.match(r'^([a-z]+)', token)
                 if alpha_match:
                     expanded_tokens.add(alpha_match.group(1))
+                
+                # Extract numeric+letter suffix (e.g., "hunyuan3d" -> "3d", "sd3" -> "3")
+                # This handles cases like "3D", "2d", etc. in concatenated text
+                numeric_suffix = re.search(r'(\d+[a-z]*)', token)
+                if numeric_suffix:
+                    expanded_tokens.add(numeric_suffix.group(1))
+                
                 # Also keep the original token
                 expanded_tokens.add(token)
             return expanded_tokens
@@ -3148,20 +3155,36 @@ def api_search_model():
             # This matches decimal versions like "1.1" in "flux1.1" or "v3.5" or "2.0-turbo"
             name_decimal_versions = re.findall(r'(?<!\d)(\d+\.\d+)(?!\d)', model_name)
             model_id_decimal_versions = re.findall(r'(?<!\d)(\d+\.\d+)(?!\d)', model_id)
+            name_single_versions = re.findall(r'(?<!\d)(\d+)(?!\d)', model_name)
+            model_id_single_versions = re.findall(r'(?<!\d)(\d+)(?!\d)', model_id)
             
-            # If model has decimal versions, use those; otherwise use single digits
-            if name_decimal_versions or model_id_decimal_versions:
-                all_model_versions = set(name_decimal_versions + model_id_decimal_versions)
-            else:
-                name_single_versions = re.findall(r'(?<!\d)(\d+)(?!\d)', model_name)
-                model_id_single_versions = re.findall(r'(?<!\d)(\d+)(?!\d)', model_id)
-                all_model_versions = set(name_single_versions + model_id_single_versions)
+            # Collect all versions (both decimal and single)
+            all_model_versions = set(name_decimal_versions + model_id_decimal_versions + 
+                                    name_single_versions + model_id_single_versions)
             
-            # VERSION FILTERING - If user asked for a specific version, require a match
+            # VERSION FILTERING - If user asked for a specific version, require a flexible match
+            # Match major version: "2.0" matches "2", "2.1", "2.5", etc.
             if search_versions:
-                search_version_set = set(search_versions)
-                if not (search_version_set & all_model_versions):
-                    print(f"DEBUG: Filtered out {model_name} - version mismatch (search: {search_version_set}, model: {all_model_versions})")
+                version_match = False
+                for search_ver in search_versions:
+                    # Extract major version (e.g., "2.0" -> "2", "1.5" -> "1")
+                    search_major = search_ver.split('.')[0]
+                    
+                    for model_ver in all_model_versions:
+                        model_major = model_ver.split('.')[0] if '.' in model_ver else model_ver
+                        
+                        # Match if:
+                        # 1. Exact match (2.0 == 2.0)
+                        # 2. Major version match (2.0 matches 2, 2.1, 2.5)
+                        if search_ver == model_ver or search_major == model_major:
+                            version_match = True
+                            break
+                    
+                    if version_match:
+                        break
+                
+                if not version_match:
+                    print(f"DEBUG: Filtered out {model_name} - version mismatch (search: {search_versions}, model: {all_model_versions})")
                     continue
             
             # FUZZY MATCHING - Calculate multiple similarity scores
